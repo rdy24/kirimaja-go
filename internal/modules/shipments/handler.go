@@ -13,9 +13,9 @@ import (
 
 var validate = validator.New()
 
-type Handler struct{ svc Service }
+type Handler struct{ svc ShipmentService }
 
-func NewHandler(svc Service) *Handler { return &Handler{svc} }
+func NewHandler(svc ShipmentService) *Handler { return &Handler{svc} }
 
 func (h *Handler) Create(c *gin.Context) {
 	userID := c.MustGet("userID").(uint)

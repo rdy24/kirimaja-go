@@ -9,10 +9,10 @@ import (
 )
 
 type Handler struct {
-	svc shipments.Service
+	svc shipments.BranchService
 }
 
-func NewHandler(svc shipments.Service) *Handler {
+func NewHandler(svc shipments.BranchService) *Handler {
 	return &Handler{svc}
 }
 

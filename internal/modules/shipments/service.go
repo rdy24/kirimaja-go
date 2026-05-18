@@ -43,34 +43,32 @@ const (
 // shipment they do not own (and is not a privileged role).
 var ErrForbidden = errors.New("you do not have access to this shipment")
 
-type WebhookPayload struct {
-	TransactionID     string
-	TransactionStatus string
-	OrderID           string
-	GrossAmount       string
-	StatusCode        string
-	SignatureKey      string
-	PaymentType       string
-}
+// The Service is split along its four consumers (Interface Segregation):
+// each handler depends only on the slice it actually uses. One *service
+// struct still implements all of them.
 
-type ScanShipmentRequest struct {
-	TrackingNumber  string `json:"tracking_number" binding:"required"`
-	Type            string `json:"type" binding:"required,oneof=IN OUT"`
-	IsReadyToPickup bool   `json:"is_ready_to_pickup"`
-}
-
-type Service interface {
+// ShipmentService is the customer-facing shipment API.
+type ShipmentService interface {
 	Create(userID uint, req CreateShipmentRequest) (*models.Shipment, error)
 	FindAll(userID uint) ([]models.Shipment, error)
 	FindByID(id, userID, roleID uint) (*models.Shipment, error)
 	FindByTrackingNumber(tracking string, userID, roleID uint) (*models.Shipment, error)
-	HandleWebhook(payload WebhookPayload) error
+	GeneratePDFByID(id, userID, roleID uint) ([]byte, error)
+}
 
-	// Branch
+// WebhookService processes payment-gateway callbacks.
+type WebhookService interface {
+	HandleWebhook(payload WebhookPayload) error
+}
+
+// BranchService is used by branch staff scanning shipments.
+type BranchService interface {
 	FindAllBranchLogs(userID, roleID uint) ([]models.ShipmentBranchLog, error)
 	ScanShipment(req ScanShipmentRequest, userID uint) (*models.ShipmentBranchLog, error)
+}
 
-	// Courier
+// CourierService is the courier delivery workflow.
+type CourierService interface {
 	FindAllForCourier() ([]models.Shipment, error)
 	PickShipment(trackingNumber string, userID uint) (*models.Shipment, error)
 	PickupShipment(trackingNumber string, userID uint, photoFilename string) (*models.Shipment, error)
@@ -78,9 +76,15 @@ type Service interface {
 	PickShipmentFromBranch(trackingNumber string, userID uint) (*models.Shipment, error)
 	PickupShipmentFromBranch(trackingNumber string, userID uint) (*models.Shipment, error)
 	DeliverToCustomer(trackingNumber string, userID uint, photoFilename string) (*models.Shipment, error)
+}
 
-	// PDF
-	GeneratePDFByID(id, userID, roleID uint) ([]byte, error)
+// Service is the union, returned by NewService and satisfying every
+// sub-interface so a single instance can be wired to all handlers.
+type Service interface {
+	ShipmentService
+	WebhookService
+	BranchService
+	CourierService
 }
 
 type service struct {

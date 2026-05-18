@@ -16,3 +16,21 @@ type ShipmentCost struct {
 	WeightPrice   float64
 	DistancePrice float64
 }
+
+// WebhookPayload is the normalized Midtrans notification (transport concern,
+// kept out of the service file).
+type WebhookPayload struct {
+	TransactionID     string
+	TransactionStatus string
+	OrderID           string
+	GrossAmount       string
+	StatusCode        string
+	SignatureKey      string
+	PaymentType       string
+}
+
+type ScanShipmentRequest struct {
+	TrackingNumber  string `json:"tracking_number" binding:"required"`
+	Type            string `json:"type" binding:"required,oneof=IN OUT"`
+	IsReadyToPickup bool   `json:"is_ready_to_pickup"`
+}

@@ -9,10 +9,10 @@ import (
 )
 
 type Handler struct {
-	svc shipments.Service
+	svc shipments.WebhookService
 }
 
-func NewHandler(svc shipments.Service) *Handler {
+func NewHandler(svc shipments.WebhookService) *Handler {
 	return &Handler{svc}
 }
 

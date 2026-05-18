@@ -57,11 +57,11 @@ func (h *Handler) saveProofPhoto(c *gin.Context, file *multipart.FileHeader, use
 }
 
 type Handler struct {
-	svc       shipments.Service
+	svc       shipments.CourierService
 	publicDir string
 }
 
-func NewHandler(svc shipments.Service, publicDir string) *Handler {
+func NewHandler(svc shipments.CourierService, publicDir string) *Handler {
 	return &Handler{svc, publicDir}
 }
 

@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/time/rate"
 	"kirimaja-go/internal/common/email"
 	"kirimaja-go/internal/common/midtrans"
 	"kirimaja-go/internal/common/opencage"
@@ -114,7 +115,7 @@ func main() {
 	profile.RegisterRoutes(api, profileHdlr, authMw)
 	user_addresses.RegisterRoutes(api, uaHdlr, authMw)
 	shipments.RegisterRoutes(api, shipmentsHdlr, authMw, permMw)
-	webhook.RegisterRoutes(api, webhookHdlr)
+	webhook.RegisterRoutes(api, webhookHdlr, middleware.RateLimit(rate.Limit(5), 10))
 	branch.RegisterRoutes(api, branchHdlr, authMw, permMw)
 	courier.RegisterRoutes(api, courierHdlr, authMw, permMw)
 
