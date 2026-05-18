@@ -25,7 +25,7 @@ func (h *Handler) FindAll(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipment logs retrieved successfully", logs)
+	response.Success(c, http.StatusOK, "Shipment logs retrieved successfully", shipments.ToBranchLogResponses(logs))
 }
 
 func (h *Handler) Scan(c *gin.Context) {
@@ -41,5 +41,5 @@ func (h *Handler) Scan(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipment scanned successfully", log)
+	response.Success(c, http.StatusOK, "Shipment scanned successfully", shipments.ToBranchLogResponse(log))
 }

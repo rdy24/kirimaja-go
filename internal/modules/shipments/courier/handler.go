@@ -71,7 +71,7 @@ func (h *Handler) FindAll(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipments retrieved successfully", list)
+	response.Success(c, http.StatusOK, "Shipments retrieved successfully", shipments.ToShipmentResponses(list))
 }
 
 func (h *Handler) PickShipment(c *gin.Context) {
@@ -83,7 +83,7 @@ func (h *Handler) PickShipment(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipment picked up successfully", s)
+	response.Success(c, http.StatusOK, "Shipment picked up successfully", shipments.ToShipmentResponse(s))
 }
 
 func (h *Handler) PickupShipment(c *gin.Context) {
@@ -107,7 +107,7 @@ func (h *Handler) PickupShipment(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipment pickup confirmed successfully", s)
+	response.Success(c, http.StatusOK, "Shipment pickup confirmed successfully", shipments.ToShipmentResponse(s))
 }
 
 func (h *Handler) DeliverToBranch(c *gin.Context) {
@@ -119,7 +119,7 @@ func (h *Handler) DeliverToBranch(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipment delivered to branch successfully", s)
+	response.Success(c, http.StatusOK, "Shipment delivered to branch successfully", shipments.ToShipmentResponse(s))
 }
 
 func (h *Handler) PickShipmentFromBranch(c *gin.Context) {
@@ -131,7 +131,7 @@ func (h *Handler) PickShipmentFromBranch(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipment picked from branch successfully", s)
+	response.Success(c, http.StatusOK, "Shipment picked from branch successfully", shipments.ToShipmentResponse(s))
 }
 
 func (h *Handler) PickupShipmentFromBranch(c *gin.Context) {
@@ -143,7 +143,7 @@ func (h *Handler) PickupShipmentFromBranch(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipment picked up from branch successfully", s)
+	response.Success(c, http.StatusOK, "Shipment picked up from branch successfully", shipments.ToShipmentResponse(s))
 }
 
 func (h *Handler) DeliverToCustomer(c *gin.Context) {
@@ -167,5 +167,5 @@ func (h *Handler) DeliverToCustomer(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipment delivered to customer successfully", s)
+	response.Success(c, http.StatusOK, "Shipment delivered to customer successfully", shipments.ToShipmentResponse(s))
 }

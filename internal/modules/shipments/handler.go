@@ -33,7 +33,7 @@ func (h *Handler) Create(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusCreated, "Shipment created successfully", data)
+	response.Success(c, http.StatusCreated, "Shipment created successfully", ToShipmentResponse(data))
 }
 
 func (h *Handler) FindAll(c *gin.Context) {
@@ -43,7 +43,7 @@ func (h *Handler) FindAll(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, "Failed to fetch shipments", nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipments retrieved successfully", data)
+	response.Success(c, http.StatusOK, "Shipments retrieved successfully", ToShipmentResponses(data))
 }
 
 func (h *Handler) FindByID(c *gin.Context) {
@@ -55,7 +55,7 @@ func (h *Handler) FindByID(c *gin.Context) {
 		respondShipmentErr(c, err)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipment retrieved successfully", data)
+	response.Success(c, http.StatusOK, "Shipment retrieved successfully", ToShipmentResponse(data))
 }
 
 func (h *Handler) FindByTracking(c *gin.Context) {
@@ -67,7 +67,7 @@ func (h *Handler) FindByTracking(c *gin.Context) {
 		respondShipmentErr(c, err)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipment retrieved successfully", data)
+	response.Success(c, http.StatusOK, "Shipment retrieved successfully", ToShipmentResponse(data))
 }
 
 // respondShipmentErr maps a forbidden access to 403 (not 404, which would
