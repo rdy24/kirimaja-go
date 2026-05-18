@@ -466,7 +466,12 @@ func (s *service) ScanShipment(req ScanShipmentRequest, userID uint) (*models.Sh
 		}
 		branchLog = result
 
-		if err := s.repo.UpdateShipment(tx, shipment.ID, map[string]any{"delivery_status": newStatus}); err != nil {
+		// The scanning branch takes ownership so its last-mile courier can
+		// later pick the shipment up, and couriers from other branches can't.
+		if err := s.repo.UpdateShipment(tx, shipment.ID, map[string]any{
+			"delivery_status":   newStatus,
+			"current_branch_id": eb.BranchID,
+		}); err != nil {
 			return err
 		}
 		return s.repo.CreateHistory(tx, &models.ShipmentHistory{
@@ -513,9 +518,22 @@ func (s *service) courierShipmentAndBranch(trackingNumber string, userID uint) (
 	return shipment, eb, nil
 }
 
+// assertCourierBranch enforces that the shipment has been claimed by the
+// courier's own branch. Without it any courier could process any shipment
+// in the system just by knowing its tracking number.
+func assertCourierBranch(shipment *models.Shipment, eb *models.EmployeeBranch) error {
+	if shipment.CurrentBranchID == nil || *shipment.CurrentBranchID != eb.BranchID {
+		return ErrForbidden
+	}
+	return nil
+}
+
 func (s *service) updateCourierStatus(trackingNumber string, userID uint, newStatus, desc string) (*models.Shipment, error) {
 	shipment, eb, err := s.courierShipmentAndBranch(trackingNumber, userID)
 	if err != nil {
+		return nil, err
+	}
+	if err := assertCourierBranch(shipment, eb); err != nil {
 		return nil, err
 	}
 	err = s.repo.Transaction(func(tx *gorm.DB) error {
@@ -537,14 +555,51 @@ func (s *service) updateCourierStatus(trackingNumber string, userID uint, newSta
 	return shipment, nil
 }
 
+// PickShipment is the first courier touch. It "claims" an unclaimed shipment
+// to the courier's branch; a shipment already claimed by another branch is
+// rejected. From here on every other courier action requires the same branch.
 func (s *service) PickShipment(trackingNumber string, userID uint) (*models.Shipment, error) {
+	shipment, eb, err := s.courierShipmentAndBranch(trackingNumber, userID)
+	if err != nil {
+		return nil, err
+	}
+	if shipment.CurrentBranchID != nil && *shipment.CurrentBranchID != eb.BranchID {
+		return nil, ErrForbidden
+	}
+
 	desc := fmt.Sprintf("Shipment picked up by user with ID %d", userID)
-	return s.updateCourierStatus(trackingNumber, userID, StatusWaitingPickup, desc)
+	err = s.repo.Transaction(func(tx *gorm.DB) error {
+		upd := map[string]any{"delivery_status": StatusWaitingPickup}
+		if shipment.CurrentBranchID == nil {
+			upd["current_branch_id"] = eb.BranchID // claim
+		}
+		if err := s.repo.UpdateShipment(tx, shipment.ID, upd); err != nil {
+			return err
+		}
+		return s.repo.CreateHistory(tx, &models.ShipmentHistory{
+			ShipmentID:  shipment.ID,
+			UserID:      &userID,
+			BranchID:    &eb.BranchID,
+			Status:      StatusWaitingPickup,
+			Description: &desc,
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	st := StatusWaitingPickup
+	shipment.DeliveryStatus = &st
+	bid := eb.BranchID
+	shipment.CurrentBranchID = &bid
+	return shipment, nil
 }
 
 func (s *service) PickupShipment(trackingNumber string, userID uint, photoFilename string) (*models.Shipment, error) {
 	shipment, eb, err := s.courierShipmentAndBranch(trackingNumber, userID)
 	if err != nil {
+		return nil, err
+	}
+	if err := assertCourierBranch(shipment, eb); err != nil {
 		return nil, err
 	}
 	desc := fmt.Sprintf("Shipment picked up by user with ID %d", userID)
@@ -591,6 +646,9 @@ func (s *service) PickupShipmentFromBranch(trackingNumber string, userID uint) (
 func (s *service) DeliverToCustomer(trackingNumber string, userID uint, photoFilename string) (*models.Shipment, error) {
 	shipment, eb, err := s.courierShipmentAndBranch(trackingNumber, userID)
 	if err != nil {
+		return nil, err
+	}
+	if err := assertCourierBranch(shipment, eb); err != nil {
 		return nil, err
 	}
 	desc := fmt.Sprintf("Shipment picked up by user with ID %d", userID)
