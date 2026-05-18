@@ -1,0 +1,14 @@
+.env
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/bin/
+/dist/
+vendor/
+public/avatars/
+public/qrcodes/
+.omc
