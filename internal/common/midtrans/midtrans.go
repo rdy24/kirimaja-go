@@ -2,6 +2,7 @@ package midtrans
 
 import (
 	"crypto/sha512"
+	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 
@@ -12,6 +13,7 @@ import (
 type Client struct {
 	serverKey string
 	env       midtrans.EnvironmentType
+	snap      snap.Client
 }
 
 type SnapResult struct {
@@ -24,13 +26,12 @@ func New(serverKey, env string) *Client {
 	if env == "production" {
 		e = midtrans.Production
 	}
-	return &Client{serverKey, e}
+	c := &Client{serverKey: serverKey, env: e}
+	c.snap.New(serverKey, e) // build the HTTP client once, reuse per request
+	return c
 }
 
 func (c *Client) CreateSnap(orderID string, amount int64, email string) (*SnapResult, error) {
-	client := snap.Client{}
-	client.New(c.serverKey, c.env)
-
 	req := &snap.Request{
 		TransactionDetails: midtrans.TransactionDetails{
 			OrderID:  orderID,
@@ -40,7 +41,7 @@ func (c *Client) CreateSnap(orderID string, amount int64, email string) (*SnapRe
 		Expiry:         &snap.ExpiryDetails{Duration: 24, Unit: "hour"},
 	}
 
-	resp, err := client.CreateTransaction(req)
+	resp, err := c.snap.CreateTransaction(req)
 	if err != nil {
 		return nil, fmt.Errorf("midtrans snap error: %w", err)
 	}
@@ -52,6 +53,6 @@ func (c *Client) VerifyWebhookSignature(orderID, statusCode, grossAmount string)
 	hash := sha512.Sum512([]byte(raw))
 	expected := hex.EncodeToString(hash[:])
 	return func(signatureKey string) bool {
-		return expected == signatureKey
+		return subtle.ConstantTimeCompare([]byte(expected), []byte(signatureKey)) == 1
 	}
 }

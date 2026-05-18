@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -31,7 +32,7 @@ func (h *Handler) Login(c *gin.Context) {
 
 	result, err := h.svc.Login(req)
 	if err != nil {
-		if err.Error() == "invalid email or password" {
+		if errors.Is(err, ErrInvalidCredentials) {
 			response.Error(c, http.StatusUnauthorized, err.Error(), nil)
 			return
 		}
@@ -55,7 +56,7 @@ func (h *Handler) Register(c *gin.Context) {
 
 	result, err := h.svc.Register(req)
 	if err != nil {
-		if err.Error() == "email already registered" {
+		if errors.Is(err, ErrEmailRegistered) {
 			response.Error(c, http.StatusConflict, err.Error(), nil)
 			return
 		}

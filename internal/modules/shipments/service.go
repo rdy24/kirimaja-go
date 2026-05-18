@@ -39,6 +39,10 @@ const (
 	StatusDelivered              = "DELIVERED"
 )
 
+// ErrForbidden is returned when an authenticated user tries to read a
+// shipment they do not own (and is not a privileged role).
+var ErrForbidden = errors.New("you do not have access to this shipment")
+
 type WebhookPayload struct {
 	TransactionID     string
 	TransactionStatus string
@@ -58,8 +62,8 @@ type ScanShipmentRequest struct {
 type Service interface {
 	Create(userID uint, req CreateShipmentRequest) (*models.Shipment, error)
 	FindAll(userID uint) ([]models.Shipment, error)
-	FindByID(id uint) (*models.Shipment, error)
-	FindByTrackingNumber(tracking string) (*models.Shipment, error)
+	FindByID(id, userID, roleID uint) (*models.Shipment, error)
+	FindByTrackingNumber(tracking string, userID, roleID uint) (*models.Shipment, error)
 	HandleWebhook(payload WebhookPayload) error
 
 	// Branch
@@ -76,7 +80,7 @@ type Service interface {
 	DeliverToCustomer(trackingNumber string, userID uint, photoFilename string) (*models.Shipment, error)
 
 	// PDF
-	GeneratePDFByID(id uint) ([]byte, error)
+	GeneratePDFByID(id, userID, roleID uint) ([]byte, error)
 }
 
 type service struct {
@@ -109,7 +113,19 @@ func (s *service) Create(userID uint, req CreateShipmentRequest) (*models.Shipme
 	distKm := opencage.HaversineKm(*addr.Latitude, *addr.Longitude, loc.Lat, loc.Lng)
 	cost := calculateShipmentCost(distKm, req.Weight, req.DeliveryType)
 
+	// Call the external payment gateway BEFORE any DB write. If it fails we
+	// persisted nothing — no orphan shipment without a payment row. orderID
+	// no longer embeds shipment.ID (which doesn't exist yet); UnixNano keeps
+	// it unique and it's only ever looked up via external_id.
+	orderID := fmt.Sprintf("INV-%d", time.Now().UnixNano())
+	snap, err := s.midtrans.CreateSnap(orderID, int64(cost.TotalPrice), addr.User.Email)
+	if err != nil {
+		return nil, fmt.Errorf("midtrans error: %w", err)
+	}
+
+	expiryDate := time.Now().Add(24 * time.Hour)
 	var shipment models.Shipment
+	var payment models.Payment
 	err = s.repo.Transaction(func(tx *gorm.DB) error {
 		shipment = models.Shipment{
 			PaymentStatus: StatusPending,
@@ -135,21 +151,9 @@ func (s *service) Create(userID uint, req CreateShipmentRequest) (*models.Shipme
 			WeightPrice:          &cost.WeightPrice,
 			DistancePrice:        &cost.DistancePrice,
 		}
-		return s.repo.CreateShipmentDetail(tx, &detail)
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	orderID := fmt.Sprintf("INV-%d-%d", time.Now().Unix(), shipment.ID)
-	snap, err := s.midtrans.CreateSnap(orderID, int64(cost.TotalPrice), addr.User.Email)
-	if err != nil {
-		return nil, fmt.Errorf("midtrans error: %w", err)
-	}
-
-	expiryDate := time.Now().Add(24 * time.Hour)
-	var payment models.Payment
-	err = s.repo.Transaction(func(tx *gorm.DB) error {
+		if err := s.repo.CreateShipmentDetail(tx, &detail); err != nil {
+			return err
+		}
 		payment = models.Payment{
 			ShipmentID: shipment.ID,
 			ExternalID: &orderID,
@@ -204,6 +208,21 @@ func (s *service) HandleWebhook(payload WebhookPayload) error {
 
 	// 3. Map Midtrans status → internal
 	internalStatus := mapMidtransStatus(payload.TransactionStatus)
+
+	// Idempotency: Midtrans retries notifications. Once a payment has reached
+	// a terminal state, replays must not regenerate the QR, overwrite the
+	// tracking number, re-insert history, or re-enqueue the success email.
+	current := ""
+	if payment.Status != nil {
+		current = *payment.Status
+	}
+	if current == StatusPaid || current == StatusSettled {
+		return nil
+	}
+	if (current == StatusExpired || current == StatusFailed) &&
+		(internalStatus == StatusExpired || internalStatus == StatusFailed) {
+		return nil
+	}
 
 	err = s.repo.Transaction(func(tx *gorm.DB) error {
 		// 4. Update payment
@@ -285,7 +304,20 @@ func (s *service) FindAll(userID uint) ([]models.Shipment, error) {
 	return s.repo.FindAll(userID)
 }
 
-func (s *service) FindByID(id uint) (*models.Shipment, error) {
+// authorizeShipmentAccess enforces object-level authorization: privileged
+// roles see everything, everyone else only their own shipments. Without this
+// any authenticated user could read any shipment by enumerating IDs.
+func authorizeShipmentAccess(shipment *models.Shipment, userID, roleID uint) error {
+	if roleID == superAdminRoleID {
+		return nil
+	}
+	if shipment.ShipmentDetail == nil || shipment.ShipmentDetail.UserID != userID {
+		return ErrForbidden
+	}
+	return nil
+}
+
+func (s *service) FindByID(id, userID, roleID uint) (*models.Shipment, error) {
 	shipment, err := s.repo.FindByID(id)
 	if err != nil {
 		return nil, err
@@ -293,16 +325,22 @@ func (s *service) FindByID(id uint) (*models.Shipment, error) {
 	if shipment == nil {
 		return nil, fmt.Errorf("shipment with ID %d not found", id)
 	}
+	if err := authorizeShipmentAccess(shipment, userID, roleID); err != nil {
+		return nil, err
+	}
 	return shipment, nil
 }
 
-func (s *service) FindByTrackingNumber(tracking string) (*models.Shipment, error) {
+func (s *service) FindByTrackingNumber(tracking string, userID, roleID uint) (*models.Shipment, error) {
 	shipment, err := s.repo.FindByTrackingNumber(tracking)
 	if err != nil {
 		return nil, err
 	}
 	if shipment == nil {
 		return nil, fmt.Errorf("shipment with tracking number %s not found", tracking)
+	}
+	if err := authorizeShipmentAccess(shipment, userID, roleID); err != nil {
+		return nil, err
 	}
 	return shipment, nil
 }
@@ -581,8 +619,8 @@ func (s *service) DeliverToCustomer(trackingNumber string, userID uint, photoFil
 	return shipment, nil
 }
 
-func (s *service) GeneratePDFByID(id uint) ([]byte, error) {
-	shipment, err := s.FindByID(id)
+func (s *service) GeneratePDFByID(id, userID, roleID uint) ([]byte, error) {
+	shipment, err := s.FindByID(id, userID, roleID)
 	if err != nil {
 		return nil, err
 	}

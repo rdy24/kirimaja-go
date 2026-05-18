@@ -10,6 +10,11 @@ import (
 	"kirimaja-go/models"
 )
 
+var (
+	ErrInvalidCredentials = errors.New("invalid email or password")
+	ErrEmailRegistered    = errors.New("email already registered")
+)
+
 type Service interface {
 	Login(req LoginRequest) (*AuthResponse, error)
 	Register(req RegisterRequest) (*AuthResponse, error)
@@ -31,11 +36,11 @@ func (s *service) Login(req LoginRequest) (*AuthResponse, error) {
 		return nil, err
 	}
 	if user == nil {
-		return nil, errors.New("invalid email or password")
+		return nil, ErrInvalidCredentials
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-		return nil, errors.New("invalid email or password")
+		return nil, ErrInvalidCredentials
 	}
 
 	token, err := s.generateToken(user)
@@ -52,7 +57,7 @@ func (s *service) Register(req RegisterRequest) (*AuthResponse, error) {
 		return nil, err
 	}
 	if existing != nil {
-		return nil, errors.New("email already registered")
+		return nil, ErrEmailRegistered
 	}
 
 	role, err := s.repo.FindRoleByKey("customer")

@@ -30,8 +30,9 @@ import (
 
 func main() {
 	cfg := config.Load()
+	cfg.Validate()
 
-	db, err := database.Connect(cfg.DatabaseURL)
+	db, err := database.Connect(cfg.DatabaseURL, cfg.IsProduction())
 	if err != nil {
 		log.Fatalf("Database connection failed: %v", err)
 	}
@@ -48,6 +49,7 @@ func main() {
 	workerClient := worker.NewClient(cfg.RedisURL)
 	workerServer := worker.NewServer(cfg.RedisURL, emailSvc, db)
 	workerServer.Start()
+	defer workerServer.Shutdown()
 
 	// PDF
 	pdfSvc, closePDF := pdf.New(cfg.PublicDir)

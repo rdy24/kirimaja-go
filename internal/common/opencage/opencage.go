@@ -1,15 +1,20 @@
 package opencage
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"net/http"
 	neturl "net/url"
+	"time"
 )
 
-type Client struct{ apiKey string }
+type Client struct {
+	apiKey string
+	http   *http.Client
+}
 
 type Location struct {
 	Lat float64
@@ -26,15 +31,26 @@ type opencageResponse struct {
 }
 
 func New(apiKey string) *Client {
-	return &Client{apiKey}
+	return &Client{
+		apiKey: apiKey,
+		http:   &http.Client{Timeout: 10 * time.Second},
+	}
 }
 
 func (c *Client) Geocode(address string) (*Location, error) {
+	return c.GeocodeContext(context.Background(), address)
+}
+
+func (c *Client) GeocodeContext(ctx context.Context, address string) (*Location, error) {
 	url := fmt.Sprintf(
 		"https://api.opencagedata.com/geocode/v1/json?q=%s&key=%s&limit=1",
 		neturl.QueryEscape(address), c.apiKey,
 	)
-	resp, err := http.Get(url) //nolint:gosec
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("opencage request build failed: %w", err)
+	}
+	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("opencage request failed: %w", err)
 	}

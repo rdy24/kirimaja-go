@@ -34,11 +34,18 @@ func NewServer(redisAddr string, emailSvc *email.Service, db *gorm.DB) *Server {
 
 func (s *Server) Start() {
 	go func() {
+		// log.Fatalf here would take the whole API process down with the
+		// worker. Log and let the HTTP server keep serving.
 		if err := s.srv.Run(s.mux); err != nil {
-			log.Fatalf("[worker] server error: %v", err)
+			log.Printf("[worker] server stopped with error: %v", err)
 		}
 	}()
 	log.Println("[worker] asynq server started")
+}
+
+// Shutdown gracefully stops the asynq server.
+func (s *Server) Shutdown() {
+	s.srv.Shutdown()
 }
 
 func (s *Server) handlePaymentNotification(_ context.Context, t *asynq.Task) error {

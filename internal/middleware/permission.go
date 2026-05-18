@@ -27,7 +27,14 @@ func RequirePermission(db *gorm.DB) func(permissionKey string) gin.HandlerFunc {
 				WHERE u.id = ? AND p.key = ?
 			`, userID, permissionKey).Scan(&count).Error
 
-			if err != nil || count == 0 {
+			if err != nil {
+				// A DB outage is not an authorization decision — surface it
+				// as 500 so it isn't silently mistaken for "access denied".
+				response.Error(c, http.StatusInternalServerError, "Failed to verify permissions", nil)
+				c.Abort()
+				return
+			}
+			if count == 0 {
 				response.Error(c, http.StatusForbidden, "Access denied: insufficient permissions", nil)
 				c.Abort()
 				return

@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -23,6 +24,7 @@ type Config struct {
 	SMTPSender        string
 	FrontendURL       string
 	PublicDir         string
+	AppEnv            string
 }
 
 func Load() *Config {
@@ -45,7 +47,31 @@ func Load() *Config {
 		SMTPSender:        getEnv("SMTP_EMAIL_SENDER", ""),
 		FrontendURL:       getEnv("FRONTEND_URL", "http://localhost:5173"),
 		PublicDir:         getEnv("PUBLIC_DIR", "./public"),
+		AppEnv:            getEnv("APP_ENV", "development"),
 	}
+}
+
+// Validate fails fast on missing critical configuration. An empty JWT secret
+// signs every token with []byte("") (silent total auth bypass); an empty DB
+// URL or Midtrans key breaks core flows. Better to crash on boot than serve.
+func (c *Config) Validate() {
+	var missing []string
+	if c.DatabaseURL == "" {
+		missing = append(missing, "DATABASE_URL")
+	}
+	if c.JWTSecret == "" {
+		missing = append(missing, "JWT_SECRET_KEY")
+	}
+	if c.MidtransServerKey == "" {
+		missing = append(missing, "MIDTRANS_SERVER_KEY")
+	}
+	if len(missing) > 0 {
+		log.Fatalf("config: required environment variables not set: %s", strings.Join(missing, ", "))
+	}
+}
+
+func (c *Config) IsProduction() bool {
+	return c.AppEnv == "production"
 }
 
 func getEnv(key, fallback string) string {

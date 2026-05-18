@@ -1,6 +1,7 @@
 package shipments
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -47,9 +48,11 @@ func (h *Handler) FindAll(c *gin.Context) {
 
 func (h *Handler) FindByID(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	data, err := h.svc.FindByID(uint(id))
+	userID := c.MustGet("userID").(uint)
+	roleID := c.GetUint("roleID")
+	data, err := h.svc.FindByID(uint(id), userID, roleID)
 	if err != nil {
-		response.Error(c, http.StatusNotFound, err.Error(), nil)
+		respondShipmentErr(c, err)
 		return
 	}
 	response.Success(c, http.StatusOK, "Shipment retrieved successfully", data)
@@ -57,18 +60,37 @@ func (h *Handler) FindByID(c *gin.Context) {
 
 func (h *Handler) FindByTracking(c *gin.Context) {
 	tracking := c.Param("trackingNumber")
-	data, err := h.svc.FindByTrackingNumber(tracking)
+	userID := c.MustGet("userID").(uint)
+	roleID := c.GetUint("roleID")
+	data, err := h.svc.FindByTrackingNumber(tracking, userID, roleID)
 	if err != nil {
-		response.Error(c, http.StatusNotFound, err.Error(), nil)
+		respondShipmentErr(c, err)
 		return
 	}
 	response.Success(c, http.StatusOK, "Shipment retrieved successfully", data)
 }
 
+// respondShipmentErr maps a forbidden access to 403 (not 404, which would
+// otherwise leak the same status whether or not the shipment exists — but
+// here we deliberately avoid revealing existence to non-owners).
+func respondShipmentErr(c *gin.Context, err error) {
+	if errors.Is(err, ErrForbidden) {
+		response.Error(c, http.StatusForbidden, err.Error(), nil)
+		return
+	}
+	response.Error(c, http.StatusNotFound, err.Error(), nil)
+}
+
 func (h *Handler) GeneratePDF(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	pdfBytes, err := h.svc.GeneratePDFByID(uint(id))
+	userID := c.MustGet("userID").(uint)
+	roleID := c.GetUint("roleID")
+	pdfBytes, err := h.svc.GeneratePDFByID(uint(id), userID, roleID)
 	if err != nil {
+		if errors.Is(err, ErrForbidden) {
+			response.Error(c, http.StatusForbidden, err.Error(), nil)
+			return
+		}
 		response.Error(c, http.StatusInternalServerError, err.Error(), nil)
 		return
 	}
