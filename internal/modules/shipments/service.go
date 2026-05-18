@@ -17,26 +17,26 @@ import (
 
 // Payment statuses
 const (
-	StatusPending  = "PENDING"
-	StatusPaid     = "PAID"
-	StatusSettled  = "SETTLED"
-	StatusExpired  = "EXPIRED"
-	StatusFailed   = "FAILED"
+	StatusPending = "PENDING"
+	StatusPaid    = "PAID"
+	StatusSettled = "SETTLED"
+	StatusExpired = "EXPIRED"
+	StatusFailed  = "FAILED"
 )
 
 // Delivery statuses
 const (
-	StatusReadyToPickup          = "READY_TO_PICKUP"
-	StatusWaitingPickup          = "WAITING_PICKUP"
-	StatusPickedUp               = "PICKED_UP"
-	StatusInTransit              = "IN_TRANSIT"
-	StatusArrivedAtBranch        = "ARRIVED_AT_BRANCH"
-	StatusDepartedFromBranch     = "DEPARTED_FROM_BRANCH"
-	StatusReadyToPickupAtBranch  = "READY_TO_PICKUP_AT_BRANCH"
-	StatusReadyToDeliver         = "READY_TO_DELIVER"
-	StatusOnTheWayToAddress      = "ON_THE_WAY_TO_ADDRESS"
-	StatusOnTheWay               = "ON_THE_WAY"
-	StatusDelivered              = "DELIVERED"
+	StatusReadyToPickup         = "READY_TO_PICKUP"
+	StatusWaitingPickup         = "WAITING_PICKUP"
+	StatusPickedUp              = "PICKED_UP"
+	StatusInTransit             = "IN_TRANSIT"
+	StatusArrivedAtBranch       = "ARRIVED_AT_BRANCH"
+	StatusDepartedFromBranch    = "DEPARTED_FROM_BRANCH"
+	StatusReadyToPickupAtBranch = "READY_TO_PICKUP_AT_BRANCH"
+	StatusReadyToDeliver        = "READY_TO_DELIVER"
+	StatusOnTheWayToAddress     = "ON_THE_WAY_TO_ADDRESS"
+	StatusOnTheWay              = "ON_THE_WAY"
+	StatusDelivered             = "DELIVERED"
 )
 
 // ErrForbidden is returned when an authenticated user tries to read a
@@ -161,7 +161,7 @@ func (s *service) Create(userID uint, req CreateShipmentRequest) (*models.Shipme
 		payment = models.Payment{
 			ShipmentID: shipment.ID,
 			ExternalID: &orderID,
-			Status:     strPtr(StatusPending),
+			Status:     new(StatusPending),
 			InvoiceUrl: &snap.RedirectURL,
 			ExpiryDate: &expiryDate,
 		}
@@ -237,7 +237,8 @@ func (s *service) HandleWebhook(payload WebhookPayload) error {
 			return err
 		}
 
-		if internalStatus == StatusPaid || internalStatus == StatusSettled {
+		switch internalStatus {
+		case StatusPaid, StatusSettled:
 			// 5. Generate tracking number + QR code
 			trackingNumber := fmt.Sprintf("KA%s", payload.TransactionID)
 
@@ -248,10 +249,10 @@ func (s *service) HandleWebhook(payload WebhookPayload) error {
 
 			// 6. Update shipment
 			if err := s.repo.UpdateShipment(tx, payment.ShipmentID, map[string]any{
-				"tracking_number":  trackingNumber,
-				"delivery_status":  StatusReadyToPickup,
-				"payment_status":   internalStatus,
-				"qr_code_image":    qrPath,
+				"tracking_number": trackingNumber,
+				"delivery_status": StatusReadyToPickup,
+				"payment_status":  internalStatus,
+				"qr_code_image":   qrPath,
 			}); err != nil {
 				return err
 			}
@@ -282,7 +283,7 @@ func (s *service) HandleWebhook(payload WebhookPayload) error {
 				})
 			}
 
-		} else if internalStatus == StatusExpired || internalStatus == StatusFailed {
+		case StatusExpired, StatusFailed:
 			if err := s.repo.UpdateShipment(tx, payment.ShipmentID, map[string]any{
 				"payment_status": internalStatus,
 			}); err != nil {
@@ -404,8 +405,6 @@ func calculateShipmentCost(distance, weight float64, deliveryType string) Shipme
 		WeightPrice: weightPrice, DistancePrice: distancePrice,
 	}
 }
-
-func strPtr(s string) *string { return &s }
 
 // superAdminRoleID is the role_id for SUPER_ADMIN in the roles table.
 const superAdminRoleID uint = 1

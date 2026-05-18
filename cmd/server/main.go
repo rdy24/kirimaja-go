@@ -18,11 +18,11 @@ import (
 	"kirimaja-go/internal/modules/auth"
 	"kirimaja-go/internal/modules/branches"
 	employee_branches "kirimaja-go/internal/modules/employee_branches"
+	"kirimaja-go/internal/modules/history"
 	"kirimaja-go/internal/modules/permissions"
 	"kirimaja-go/internal/modules/profile"
 	"kirimaja-go/internal/modules/roles"
 	"kirimaja-go/internal/modules/shipments"
-	"kirimaja-go/internal/modules/history"
 	"kirimaja-go/internal/modules/shipments/branch"
 	"kirimaja-go/internal/modules/shipments/courier"
 	"kirimaja-go/internal/modules/shipments/webhook"
@@ -123,7 +123,6 @@ func main() {
 	historySvc := history.NewService(historyRepo)
 	historyHdlr := history.NewHandler(historySvc)
 	history.RegisterRoutes(api, historyHdlr, authMw, permMw)
-
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})

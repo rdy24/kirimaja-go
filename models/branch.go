@@ -10,8 +10,8 @@ type Branch struct {
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 
-	EmployeeBranches  []EmployeeBranch   `gorm:"foreignKey:BranchID" json:"employee_branches,omitempty"`
-	ShipmentHistories []ShipmentHistory  `gorm:"foreignKey:BranchID" json:"shipment_histories,omitempty"`
+	EmployeeBranches   []EmployeeBranch    `gorm:"foreignKey:BranchID" json:"employee_branches,omitempty"`
+	ShipmentHistories  []ShipmentHistory   `gorm:"foreignKey:BranchID" json:"shipment_histories,omitempty"`
 	ShipmentBranchLogs []ShipmentBranchLog `gorm:"foreignKey:BranchID" json:"shipment_branch_logs,omitempty"`
 }
 

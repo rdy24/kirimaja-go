@@ -9,7 +9,7 @@ type Role struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
-	Users          []User           `gorm:"foreignKey:RoleID" json:"users,omitempty"`
+	Users           []User           `gorm:"foreignKey:RoleID" json:"users,omitempty"`
 	RolePermissions []RolePermission `gorm:"foreignKey:RoleID" json:"role_permissions,omitempty"`
 }
 
