@@ -1,15 +1,17 @@
 package auth
 
 import (
-	"kirimaja-go/models"
+	"context"
 
 	"gorm.io/gorm"
+
+	"kirimaja-go/models"
 )
 
 type Repository interface {
-	FindUserByEmail(email string) (*models.User, error)
-	FindRoleByKey(key string) (*models.Role, error)
-	CreateUser(user *models.User) error
+	FindUserByEmail(ctx context.Context, email string) (*models.User, error)
+	FindRoleByKey(ctx context.Context, key string) (*models.Role, error)
+	CreateUser(ctx context.Context, user *models.User) error
 }
 
 type repository struct {
@@ -20,9 +22,9 @@ func NewRepository(db *gorm.DB) Repository {
 	return &repository{db}
 }
 
-func (r *repository) FindUserByEmail(email string) (*models.User, error) {
+func (r *repository) FindUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	var user models.User
-	err := r.db.
+	err := r.db.WithContext(ctx).
 		Preload("Role.RolePermissions.Permission").
 		Where("email = ?", email).
 		First(&user).Error
@@ -32,15 +34,15 @@ func (r *repository) FindUserByEmail(email string) (*models.User, error) {
 	return &user, err
 }
 
-func (r *repository) FindRoleByKey(key string) (*models.Role, error) {
+func (r *repository) FindRoleByKey(ctx context.Context, key string) (*models.Role, error) {
 	var role models.Role
-	err := r.db.Where("key = ?", key).First(&role).Error
+	err := r.db.WithContext(ctx).Where("key = ?", key).First(&role).Error
 	if err == gorm.ErrRecordNotFound {
 		return nil, nil
 	}
 	return &role, err
 }
 
-func (r *repository) CreateUser(user *models.User) error {
-	return r.db.Create(user).Error
+func (r *repository) CreateUser(ctx context.Context, user *models.User) error {
+	return r.db.WithContext(ctx).Create(user).Error
 }

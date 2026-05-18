@@ -1,6 +1,7 @@
 package user_addresses
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -9,11 +10,11 @@ import (
 )
 
 type Service interface {
-	FindAll(userID uint) ([]UserAddressResponse, error)
-	FindByID(id uint) (*UserAddressResponse, error)
-	Create(userID uint, req CreateUserAddressRequest, photoPath *string) (*UserAddressResponse, error)
-	Update(id uint, req UpdateUserAddressRequest, photoPath *string) (*UserAddressResponse, error)
-	Delete(id uint) error
+	FindAll(ctx context.Context, userID uint) ([]UserAddressResponse, error)
+	FindByID(ctx context.Context, id uint) (*UserAddressResponse, error)
+	Create(ctx context.Context, userID uint, req CreateUserAddressRequest, photoPath *string) (*UserAddressResponse, error)
+	Update(ctx context.Context, id uint, req UpdateUserAddressRequest, photoPath *string) (*UserAddressResponse, error)
+	Delete(ctx context.Context, id uint) error
 }
 
 type service struct {
@@ -25,8 +26,8 @@ func NewService(repo Repository, geocli *opencage.Client) Service {
 	return &service{repo, geocli}
 }
 
-func (s *service) FindAll(userID uint) ([]UserAddressResponse, error) {
-	list, err := s.repo.FindAllByUserID(userID)
+func (s *service) FindAll(ctx context.Context, userID uint) ([]UserAddressResponse, error) {
+	list, err := s.repo.FindAllByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -37,8 +38,8 @@ func (s *service) FindAll(userID uint) ([]UserAddressResponse, error) {
 	return result, nil
 }
 
-func (s *service) FindByID(id uint) (*UserAddressResponse, error) {
-	addr, err := s.repo.FindByID(id)
+func (s *service) FindByID(ctx context.Context, id uint) (*UserAddressResponse, error) {
+	addr, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -49,8 +50,8 @@ func (s *service) FindByID(id uint) (*UserAddressResponse, error) {
 	return &res, nil
 }
 
-func (s *service) Create(userID uint, req CreateUserAddressRequest, photoPath *string) (*UserAddressResponse, error) {
-	loc, err := s.geocli.Geocode(req.Address)
+func (s *service) Create(ctx context.Context, userID uint, req CreateUserAddressRequest, photoPath *string) (*UserAddressResponse, error) {
+	loc, err := s.geocli.GeocodeContext(ctx, req.Address)
 	if err != nil {
 		return nil, fmt.Errorf("geocode gagal: %w", err)
 	}
@@ -69,14 +70,14 @@ func (s *service) Create(userID uint, req CreateUserAddressRequest, photoPath *s
 		Latitude:  &loc.Lat,
 		Longitude: &loc.Lng,
 	}
-	if err := s.repo.Create(addr); err != nil {
+	if err := s.repo.Create(ctx, addr); err != nil {
 		return nil, err
 	}
-	return s.FindByID(addr.ID)
+	return s.FindByID(ctx, addr.ID)
 }
 
-func (s *service) Update(id uint, req UpdateUserAddressRequest, photoPath *string) (*UserAddressResponse, error) {
-	existing, err := s.repo.FindByID(id)
+func (s *service) Update(ctx context.Context, id uint, req UpdateUserAddressRequest, photoPath *string) (*UserAddressResponse, error) {
+	existing, err := s.repo.FindByID(ctx, id)
 	if err != nil || existing == nil {
 		return nil, errors.New("user address tidak ditemukan")
 	}
@@ -84,7 +85,7 @@ func (s *service) Update(id uint, req UpdateUserAddressRequest, photoPath *strin
 	data := map[string]any{}
 
 	if req.Address != "" && req.Address != existing.Address {
-		loc, err := s.geocli.Geocode(req.Address)
+		loc, err := s.geocli.GeocodeContext(ctx, req.Address)
 		if err != nil {
 			return nil, fmt.Errorf("geocode gagal: %w", err)
 		}
@@ -105,18 +106,18 @@ func (s *service) Update(id uint, req UpdateUserAddressRequest, photoPath *strin
 	}
 
 	if len(data) > 0 {
-		if err := s.repo.Update(id, data); err != nil {
+		if err := s.repo.Update(ctx, id, data); err != nil {
 			return nil, err
 		}
 	}
-	return s.FindByID(id)
+	return s.FindByID(ctx, id)
 }
 
-func (s *service) Delete(id uint) error {
-	if _, err := s.FindByID(id); err != nil {
+func (s *service) Delete(ctx context.Context, id uint) error {
+	if _, err := s.FindByID(ctx, id); err != nil {
 		return err
 	}
-	return s.repo.Delete(id)
+	return s.repo.Delete(ctx, id)
 }
 
 func toResponse(a models.UserAddress) UserAddressResponse {

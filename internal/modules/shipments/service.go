@@ -1,16 +1,14 @@
 package shipments
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
 	"time"
 
-	"gorm.io/gorm"
-	"kirimaja-go/internal/common/midtrans"
 	"kirimaja-go/internal/common/opencage"
 	"kirimaja-go/internal/common/pdf"
-	"kirimaja-go/internal/common/qrcode"
 	"kirimaja-go/internal/common/worker"
 	"kirimaja-go/models"
 )
@@ -49,33 +47,33 @@ var ErrForbidden = errors.New("you do not have access to this shipment")
 
 // ShipmentService is the customer-facing shipment API.
 type ShipmentService interface {
-	Create(userID uint, req CreateShipmentRequest) (*models.Shipment, error)
-	FindAll(userID uint) ([]models.Shipment, error)
-	FindByID(id, userID, roleID uint) (*models.Shipment, error)
-	FindByTrackingNumber(tracking string, userID, roleID uint) (*models.Shipment, error)
-	GeneratePDFByID(id, userID, roleID uint) ([]byte, error)
+	Create(ctx context.Context, userID uint, req CreateShipmentRequest) (*models.Shipment, error)
+	FindAll(ctx context.Context, userID uint) ([]models.Shipment, error)
+	FindByID(ctx context.Context, id, userID, roleID uint) (*models.Shipment, error)
+	FindByTrackingNumber(ctx context.Context, tracking string, userID, roleID uint) (*models.Shipment, error)
+	GeneratePDFByID(ctx context.Context, id, userID, roleID uint) ([]byte, error)
 }
 
 // WebhookService processes payment-gateway callbacks.
 type WebhookService interface {
-	HandleWebhook(payload WebhookPayload) error
+	HandleWebhook(ctx context.Context, payload WebhookPayload) error
 }
 
 // BranchService is used by branch staff scanning shipments.
 type BranchService interface {
-	FindAllBranchLogs(userID, roleID uint) ([]models.ShipmentBranchLog, error)
-	ScanShipment(req ScanShipmentRequest, userID uint) (*models.ShipmentBranchLog, error)
+	FindAllBranchLogs(ctx context.Context, userID, roleID uint) ([]models.ShipmentBranchLog, error)
+	ScanShipment(ctx context.Context, req ScanShipmentRequest, userID uint) (*models.ShipmentBranchLog, error)
 }
 
 // CourierService is the courier delivery workflow.
 type CourierService interface {
-	FindAllForCourier() ([]models.Shipment, error)
-	PickShipment(trackingNumber string, userID uint) (*models.Shipment, error)
-	PickupShipment(trackingNumber string, userID uint, photoFilename string) (*models.Shipment, error)
-	DeliverToBranch(trackingNumber string, userID uint) (*models.Shipment, error)
-	PickShipmentFromBranch(trackingNumber string, userID uint) (*models.Shipment, error)
-	PickupShipmentFromBranch(trackingNumber string, userID uint) (*models.Shipment, error)
-	DeliverToCustomer(trackingNumber string, userID uint, photoFilename string) (*models.Shipment, error)
+	FindAllForCourier(ctx context.Context) ([]models.Shipment, error)
+	PickShipment(ctx context.Context, trackingNumber string, userID uint) (*models.Shipment, error)
+	PickupShipment(ctx context.Context, trackingNumber string, userID uint, photoFilename string) (*models.Shipment, error)
+	DeliverToBranch(ctx context.Context, trackingNumber string, userID uint) (*models.Shipment, error)
+	PickShipmentFromBranch(ctx context.Context, trackingNumber string, userID uint) (*models.Shipment, error)
+	PickupShipmentFromBranch(ctx context.Context, trackingNumber string, userID uint) (*models.Shipment, error)
+	DeliverToCustomer(ctx context.Context, trackingNumber string, userID uint, photoFilename string) (*models.Shipment, error)
 }
 
 // Service is the union, returned by NewService and satisfying every
@@ -89,24 +87,24 @@ type Service interface {
 
 type service struct {
 	repo     Repository
-	geocli   *opencage.Client
-	midtrans *midtrans.Client
-	qrSvc    *qrcode.Service
-	worker   *worker.Client
-	pdfSvc   *pdf.Service
+	geocli   Geocoder
+	midtrans PaymentGateway
+	qrSvc    QRGenerator
+	worker   TaskQueue
+	pdfSvc   PDFRenderer
 }
 
-func NewService(repo Repository, geo *opencage.Client, mt *midtrans.Client, qr *qrcode.Service, wk *worker.Client, pdfSvc *pdf.Service) Service {
+func NewService(repo Repository, geo Geocoder, mt PaymentGateway, qr QRGenerator, wk TaskQueue, pdfSvc PDFRenderer) Service {
 	return &service{repo, geo, mt, qr, wk, pdfSvc}
 }
 
-func (s *service) Create(userID uint, req CreateShipmentRequest) (*models.Shipment, error) {
-	loc, err := s.geocli.Geocode(req.DestinationAddress)
+func (s *service) Create(ctx context.Context, userID uint, req CreateShipmentRequest) (*models.Shipment, error) {
+	loc, err := s.geocli.GeocodeContext(ctx, req.DestinationAddress)
 	if err != nil {
 		return nil, fmt.Errorf("geocode gagal: %w", err)
 	}
 
-	addr, err := s.repo.FindPickupAddress(req.PickupAddressID)
+	addr, err := s.repo.FindPickupAddress(ctx, req.PickupAddressID)
 	if err != nil || addr == nil {
 		return nil, errors.New("pickup address tidak ditemukan")
 	}
@@ -130,13 +128,13 @@ func (s *service) Create(userID uint, req CreateShipmentRequest) (*models.Shipme
 	expiryDate := time.Now().Add(24 * time.Hour)
 	var shipment models.Shipment
 	var payment models.Payment
-	err = s.repo.Transaction(func(tx *gorm.DB) error {
+	err = s.repo.Atomic(ctx, func(r Repository) error {
 		shipment = models.Shipment{
 			PaymentStatus: StatusPending,
 			Distance:      &distKm,
 			Price:         &cost.TotalPrice,
 		}
-		if err := s.repo.CreateShipment(tx, &shipment); err != nil {
+		if err := r.CreateShipment(ctx, &shipment); err != nil {
 			return err
 		}
 		detail := models.ShipmentDetail{
@@ -155,7 +153,7 @@ func (s *service) Create(userID uint, req CreateShipmentRequest) (*models.Shipme
 			WeightPrice:          &cost.WeightPrice,
 			DistancePrice:        &cost.DistancePrice,
 		}
-		if err := s.repo.CreateShipmentDetail(tx, &detail); err != nil {
+		if err := r.CreateShipmentDetail(ctx, &detail); err != nil {
 			return err
 		}
 		payment = models.Payment{
@@ -165,11 +163,11 @@ func (s *service) Create(userID uint, req CreateShipmentRequest) (*models.Shipme
 			InvoiceUrl: &snap.RedirectURL,
 			ExpiryDate: &expiryDate,
 		}
-		if err := s.repo.CreatePayment(tx, &payment); err != nil {
+		if err := r.CreatePayment(ctx, &payment); err != nil {
 			return err
 		}
 		desc := fmt.Sprintf("Shipment created with total price %.0f", cost.TotalPrice)
-		return s.repo.CreateHistory(tx, &models.ShipmentHistory{
+		return r.CreateHistory(ctx, &models.ShipmentHistory{
 			ShipmentID:  shipment.ID,
 			Status:      StatusPending,
 			Description: &desc,
@@ -197,7 +195,7 @@ func (s *service) Create(userID uint, req CreateShipmentRequest) (*models.Shipme
 	return &shipment, nil
 }
 
-func (s *service) HandleWebhook(payload WebhookPayload) error {
+func (s *service) HandleWebhook(ctx context.Context, payload WebhookPayload) error {
 	// 1. Verify Midtrans signature
 	verify := s.midtrans.VerifyWebhookSignature(payload.OrderID, payload.StatusCode, payload.GrossAmount)
 	if !verify(payload.SignatureKey) {
@@ -205,7 +203,7 @@ func (s *service) HandleWebhook(payload WebhookPayload) error {
 	}
 
 	// 2. Find payment by order_id (stored as external_id)
-	payment, err := s.repo.FindPaymentByExternalID(payload.OrderID)
+	payment, err := s.repo.FindPaymentByExternalID(ctx, payload.OrderID)
 	if err != nil || payment == nil {
 		return fmt.Errorf("payment with order_id %s not found", payload.OrderID)
 	}
@@ -228,9 +226,9 @@ func (s *service) HandleWebhook(payload WebhookPayload) error {
 		return nil
 	}
 
-	err = s.repo.Transaction(func(tx *gorm.DB) error {
+	err = s.repo.Atomic(ctx, func(r Repository) error {
 		// 4. Update payment
-		if err := s.repo.UpdatePayment(tx, payment.ID, map[string]any{
+		if err := r.UpdatePayment(ctx, payment.ID, map[string]any{
 			"status":         internalStatus,
 			"payment_method": payload.PaymentType,
 		}); err != nil {
@@ -248,7 +246,7 @@ func (s *service) HandleWebhook(payload WebhookPayload) error {
 			}
 
 			// 6. Update shipment
-			if err := s.repo.UpdateShipment(tx, payment.ShipmentID, map[string]any{
+			if err := r.UpdateShipment(ctx, payment.ShipmentID, map[string]any{
 				"tracking_number": trackingNumber,
 				"delivery_status": StatusReadyToPickup,
 				"payment_status":  internalStatus,
@@ -260,7 +258,7 @@ func (s *service) HandleWebhook(payload WebhookPayload) error {
 			// 7. Add history
 			userID := payment.Shipment.ShipmentDetail.UserID
 			desc := fmt.Sprintf("Payment %s. Tracking number: %s", internalStatus, trackingNumber)
-			if err := s.repo.CreateHistory(tx, &models.ShipmentHistory{
+			if err := r.CreateHistory(ctx, &models.ShipmentHistory{
 				ShipmentID:  payment.ShipmentID,
 				UserID:      &userID,
 				Status:      StatusReadyToPickup,
@@ -284,13 +282,13 @@ func (s *service) HandleWebhook(payload WebhookPayload) error {
 			}
 
 		case StatusExpired, StatusFailed:
-			if err := s.repo.UpdateShipment(tx, payment.ShipmentID, map[string]any{
+			if err := r.UpdateShipment(ctx, payment.ShipmentID, map[string]any{
 				"payment_status": internalStatus,
 			}); err != nil {
 				return err
 			}
 			desc := fmt.Sprintf("Payment %s", internalStatus)
-			if err := s.repo.CreateHistory(tx, &models.ShipmentHistory{
+			if err := r.CreateHistory(ctx, &models.ShipmentHistory{
 				ShipmentID:  payment.ShipmentID,
 				Status:      internalStatus,
 				Description: &desc,
@@ -305,8 +303,8 @@ func (s *service) HandleWebhook(payload WebhookPayload) error {
 	return err
 }
 
-func (s *service) FindAll(userID uint) ([]models.Shipment, error) {
-	return s.repo.FindAll(userID)
+func (s *service) FindAll(ctx context.Context, userID uint) ([]models.Shipment, error) {
+	return s.repo.FindAll(ctx, userID)
 }
 
 // authorizeShipmentAccess enforces object-level authorization: privileged
@@ -322,8 +320,8 @@ func authorizeShipmentAccess(shipment *models.Shipment, userID, roleID uint) err
 	return nil
 }
 
-func (s *service) FindByID(id, userID, roleID uint) (*models.Shipment, error) {
-	shipment, err := s.repo.FindByID(id)
+func (s *service) FindByID(ctx context.Context, id, userID, roleID uint) (*models.Shipment, error) {
+	shipment, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -336,8 +334,8 @@ func (s *service) FindByID(id, userID, roleID uint) (*models.Shipment, error) {
 	return shipment, nil
 }
 
-func (s *service) FindByTrackingNumber(tracking string, userID, roleID uint) (*models.Shipment, error) {
-	shipment, err := s.repo.FindByTrackingNumber(tracking)
+func (s *service) FindByTrackingNumber(ctx context.Context, tracking string, userID, roleID uint) (*models.Shipment, error) {
+	shipment, err := s.repo.FindByTrackingNumber(ctx, tracking)
 	if err != nil {
 		return nil, err
 	}
@@ -409,24 +407,24 @@ func calculateShipmentCost(distance, weight float64, deliveryType string) Shipme
 // superAdminRoleID is the role_id for SUPER_ADMIN in the roles table.
 const superAdminRoleID uint = 1
 
-func (s *service) FindAllBranchLogs(userID, roleID uint) ([]models.ShipmentBranchLog, error) {
+func (s *service) FindAllBranchLogs(ctx context.Context, userID, roleID uint) ([]models.ShipmentBranchLog, error) {
 	if roleID == superAdminRoleID {
-		return s.repo.FindAllBranchLogs(nil)
+		return s.repo.FindAllBranchLogs(ctx, nil)
 	}
-	eb, err := s.repo.FindEmployeeBranch(userID)
+	eb, err := s.repo.FindEmployeeBranch(ctx, userID)
 	if err != nil || eb == nil {
 		return nil, errors.New("user branch not found")
 	}
-	return s.repo.FindAllBranchLogs(&eb.BranchID)
+	return s.repo.FindAllBranchLogs(ctx, &eb.BranchID)
 }
 
-func (s *service) ScanShipment(req ScanShipmentRequest, userID uint) (*models.ShipmentBranchLog, error) {
-	eb, err := s.repo.FindEmployeeBranch(userID)
+func (s *service) ScanShipment(ctx context.Context, req ScanShipmentRequest, userID uint) (*models.ShipmentBranchLog, error) {
+	eb, err := s.repo.FindEmployeeBranch(ctx, userID)
 	if err != nil || eb == nil {
 		return nil, errors.New("user branch not found")
 	}
 
-	shipment, err := s.repo.FindByTrackingNumber(req.TrackingNumber)
+	shipment, err := s.repo.FindByTrackingNumber(ctx, req.TrackingNumber)
 	if err != nil || shipment == nil {
 		return nil, errors.New("shipment not found")
 	}
@@ -443,7 +441,7 @@ func (s *service) ScanShipment(req ScanShipmentRequest, userID uint) (*models.Sh
 	}
 
 	if req.Type == "OUT" {
-		last, err := s.repo.FindLastBranchLogIn(req.TrackingNumber, eb.BranchID)
+		last, err := s.repo.FindLastBranchLogIn(ctx, req.TrackingNumber, eb.BranchID)
 		if err != nil || last == nil {
 			return nil, errors.New("no IN scan found for this shipment at this branch")
 		}
@@ -453,7 +451,7 @@ func (s *service) ScanShipment(req ScanShipmentRequest, userID uint) (*models.Sh
 	desc := scanDescription(req.Type, eb.Branch.Name)
 
 	var branchLog *models.ShipmentBranchLog
-	err = s.repo.Transaction(func(tx *gorm.DB) error {
+	err = s.repo.Atomic(ctx, func(r Repository) error {
 		log := &models.ShipmentBranchLog{
 			ShipmentID:      shipment.ID,
 			BranchID:        eb.BranchID,
@@ -463,7 +461,7 @@ func (s *service) ScanShipment(req ScanShipmentRequest, userID uint) (*models.Sh
 			ScannedByUserID: userID,
 			TrackingNumber:  req.TrackingNumber,
 		}
-		result, err := s.repo.CreateBranchLog(tx, log)
+		result, err := r.CreateBranchLog(ctx, log)
 		if err != nil {
 			return err
 		}
@@ -471,13 +469,13 @@ func (s *service) ScanShipment(req ScanShipmentRequest, userID uint) (*models.Sh
 
 		// The scanning branch takes ownership so its last-mile courier can
 		// later pick the shipment up, and couriers from other branches can't.
-		if err := s.repo.UpdateShipment(tx, shipment.ID, map[string]any{
+		if err := r.UpdateShipment(ctx, shipment.ID, map[string]any{
 			"delivery_status":   newStatus,
 			"current_branch_id": eb.BranchID,
 		}); err != nil {
 			return err
 		}
-		return s.repo.CreateHistory(tx, &models.ShipmentHistory{
+		return r.CreateHistory(ctx, &models.ShipmentHistory{
 			ShipmentID:  shipment.ID,
 			UserID:      &userID,
 			BranchID:    &eb.BranchID,
@@ -505,16 +503,16 @@ func scanDescription(scanType, branchName string) string {
 	return fmt.Sprintf("Shipment departed from %s", branchName)
 }
 
-func (s *service) FindAllForCourier() ([]models.Shipment, error) {
-	return s.repo.FindAllForCourier()
+func (s *service) FindAllForCourier(ctx context.Context) ([]models.Shipment, error) {
+	return s.repo.FindAllForCourier(ctx)
 }
 
-func (s *service) courierShipmentAndBranch(trackingNumber string, userID uint) (*models.Shipment, *models.EmployeeBranch, error) {
-	shipment, err := s.repo.FindByTrackingNumber(trackingNumber)
+func (s *service) courierShipmentAndBranch(ctx context.Context, trackingNumber string, userID uint) (*models.Shipment, *models.EmployeeBranch, error) {
+	shipment, err := s.repo.FindByTrackingNumber(ctx, trackingNumber)
 	if err != nil || shipment == nil {
 		return nil, nil, fmt.Errorf("shipment with tracking number %s not found", trackingNumber)
 	}
-	eb, err := s.repo.FindEmployeeBranch(userID)
+	eb, err := s.repo.FindEmployeeBranch(ctx, userID)
 	if err != nil || eb == nil {
 		return nil, nil, fmt.Errorf("user %d not found in any branch", userID)
 	}
@@ -531,19 +529,19 @@ func assertCourierBranch(shipment *models.Shipment, eb *models.EmployeeBranch) e
 	return nil
 }
 
-func (s *service) updateCourierStatus(trackingNumber string, userID uint, newStatus, desc string) (*models.Shipment, error) {
-	shipment, eb, err := s.courierShipmentAndBranch(trackingNumber, userID)
+func (s *service) updateCourierStatus(ctx context.Context, trackingNumber string, userID uint, newStatus, desc string) (*models.Shipment, error) {
+	shipment, eb, err := s.courierShipmentAndBranch(ctx, trackingNumber, userID)
 	if err != nil {
 		return nil, err
 	}
 	if err := assertCourierBranch(shipment, eb); err != nil {
 		return nil, err
 	}
-	err = s.repo.Transaction(func(tx *gorm.DB) error {
-		if err := s.repo.UpdateShipment(tx, shipment.ID, map[string]any{"delivery_status": newStatus}); err != nil {
+	err = s.repo.Atomic(ctx, func(r Repository) error {
+		if err := r.UpdateShipment(ctx, shipment.ID, map[string]any{"delivery_status": newStatus}); err != nil {
 			return err
 		}
-		return s.repo.CreateHistory(tx, &models.ShipmentHistory{
+		return r.CreateHistory(ctx, &models.ShipmentHistory{
 			ShipmentID:  shipment.ID,
 			UserID:      &userID,
 			BranchID:    &eb.BranchID,
@@ -561,8 +559,8 @@ func (s *service) updateCourierStatus(trackingNumber string, userID uint, newSta
 // PickShipment is the first courier touch. It "claims" an unclaimed shipment
 // to the courier's branch; a shipment already claimed by another branch is
 // rejected. From here on every other courier action requires the same branch.
-func (s *service) PickShipment(trackingNumber string, userID uint) (*models.Shipment, error) {
-	shipment, eb, err := s.courierShipmentAndBranch(trackingNumber, userID)
+func (s *service) PickShipment(ctx context.Context, trackingNumber string, userID uint) (*models.Shipment, error) {
+	shipment, eb, err := s.courierShipmentAndBranch(ctx, trackingNumber, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -571,15 +569,15 @@ func (s *service) PickShipment(trackingNumber string, userID uint) (*models.Ship
 	}
 
 	desc := fmt.Sprintf("Shipment picked up by user with ID %d", userID)
-	err = s.repo.Transaction(func(tx *gorm.DB) error {
+	err = s.repo.Atomic(ctx, func(r Repository) error {
 		upd := map[string]any{"delivery_status": StatusWaitingPickup}
 		if shipment.CurrentBranchID == nil {
 			upd["current_branch_id"] = eb.BranchID // claim
 		}
-		if err := s.repo.UpdateShipment(tx, shipment.ID, upd); err != nil {
+		if err := r.UpdateShipment(ctx, shipment.ID, upd); err != nil {
 			return err
 		}
-		return s.repo.CreateHistory(tx, &models.ShipmentHistory{
+		return r.CreateHistory(ctx, &models.ShipmentHistory{
 			ShipmentID:  shipment.ID,
 			UserID:      &userID,
 			BranchID:    &eb.BranchID,
@@ -597,8 +595,8 @@ func (s *service) PickShipment(trackingNumber string, userID uint) (*models.Ship
 	return shipment, nil
 }
 
-func (s *service) PickupShipment(trackingNumber string, userID uint, photoFilename string) (*models.Shipment, error) {
-	shipment, eb, err := s.courierShipmentAndBranch(trackingNumber, userID)
+func (s *service) PickupShipment(ctx context.Context, trackingNumber string, userID uint, photoFilename string) (*models.Shipment, error) {
+	shipment, eb, err := s.courierShipmentAndBranch(ctx, trackingNumber, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -606,16 +604,16 @@ func (s *service) PickupShipment(trackingNumber string, userID uint, photoFilena
 		return nil, err
 	}
 	desc := fmt.Sprintf("Shipment picked up by user with ID %d", userID)
-	err = s.repo.Transaction(func(tx *gorm.DB) error {
-		if err := s.repo.UpdateShipment(tx, shipment.ID, map[string]any{"delivery_status": StatusPickedUp}); err != nil {
+	err = s.repo.Atomic(ctx, func(r Repository) error {
+		if err := r.UpdateShipment(ctx, shipment.ID, map[string]any{"delivery_status": StatusPickedUp}); err != nil {
 			return err
 		}
-		if err := s.repo.UpdateShipmentDetail(tx, shipment.ID, map[string]any{
+		if err := r.UpdateShipmentDetail(ctx, shipment.ID, map[string]any{
 			"pickup_proof": "uploads/photos/" + photoFilename,
 		}); err != nil {
 			return err
 		}
-		return s.repo.CreateHistory(tx, &models.ShipmentHistory{
+		return r.CreateHistory(ctx, &models.ShipmentHistory{
 			ShipmentID:  shipment.ID,
 			UserID:      &userID,
 			BranchID:    &eb.BranchID,
@@ -631,23 +629,23 @@ func (s *service) PickupShipment(trackingNumber string, userID uint, photoFilena
 	return shipment, nil
 }
 
-func (s *service) DeliverToBranch(trackingNumber string, userID uint) (*models.Shipment, error) {
+func (s *service) DeliverToBranch(ctx context.Context, trackingNumber string, userID uint) (*models.Shipment, error) {
 	desc := fmt.Sprintf("Shipment picked up by user with ID %d", userID)
-	return s.updateCourierStatus(trackingNumber, userID, StatusInTransit, desc)
+	return s.updateCourierStatus(ctx, trackingNumber, userID, StatusInTransit, desc)
 }
 
-func (s *service) PickShipmentFromBranch(trackingNumber string, userID uint) (*models.Shipment, error) {
+func (s *service) PickShipmentFromBranch(ctx context.Context, trackingNumber string, userID uint) (*models.Shipment, error) {
 	desc := fmt.Sprintf("Shipment picked up by user with ID %d", userID)
-	return s.updateCourierStatus(trackingNumber, userID, StatusReadyToDeliver, desc)
+	return s.updateCourierStatus(ctx, trackingNumber, userID, StatusReadyToDeliver, desc)
 }
 
-func (s *service) PickupShipmentFromBranch(trackingNumber string, userID uint) (*models.Shipment, error) {
+func (s *service) PickupShipmentFromBranch(ctx context.Context, trackingNumber string, userID uint) (*models.Shipment, error) {
 	desc := fmt.Sprintf("Shipment picked up by user with ID %d", userID)
-	return s.updateCourierStatus(trackingNumber, userID, StatusOnTheWayToAddress, desc)
+	return s.updateCourierStatus(ctx, trackingNumber, userID, StatusOnTheWayToAddress, desc)
 }
 
-func (s *service) DeliverToCustomer(trackingNumber string, userID uint, photoFilename string) (*models.Shipment, error) {
-	shipment, eb, err := s.courierShipmentAndBranch(trackingNumber, userID)
+func (s *service) DeliverToCustomer(ctx context.Context, trackingNumber string, userID uint, photoFilename string) (*models.Shipment, error) {
+	shipment, eb, err := s.courierShipmentAndBranch(ctx, trackingNumber, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -655,16 +653,16 @@ func (s *service) DeliverToCustomer(trackingNumber string, userID uint, photoFil
 		return nil, err
 	}
 	desc := fmt.Sprintf("Shipment picked up by user with ID %d", userID)
-	err = s.repo.Transaction(func(tx *gorm.DB) error {
-		if err := s.repo.UpdateShipment(tx, shipment.ID, map[string]any{"delivery_status": StatusDelivered}); err != nil {
+	err = s.repo.Atomic(ctx, func(r Repository) error {
+		if err := r.UpdateShipment(ctx, shipment.ID, map[string]any{"delivery_status": StatusDelivered}); err != nil {
 			return err
 		}
-		if err := s.repo.UpdateShipmentDetail(tx, shipment.ID, map[string]any{
+		if err := r.UpdateShipmentDetail(ctx, shipment.ID, map[string]any{
 			"receipt_proof": "uploads/photos/" + photoFilename,
 		}); err != nil {
 			return err
 		}
-		return s.repo.CreateHistory(tx, &models.ShipmentHistory{
+		return r.CreateHistory(ctx, &models.ShipmentHistory{
 			ShipmentID:  shipment.ID,
 			UserID:      &userID,
 			BranchID:    &eb.BranchID,
@@ -680,8 +678,8 @@ func (s *service) DeliverToCustomer(trackingNumber string, userID uint, photoFil
 	return shipment, nil
 }
 
-func (s *service) GeneratePDFByID(id, userID, roleID uint) ([]byte, error) {
-	shipment, err := s.FindByID(id, userID, roleID)
+func (s *service) GeneratePDFByID(ctx context.Context, id, userID, roleID uint) ([]byte, error) {
+	shipment, err := s.FindByID(ctx, id, userID, roleID)
 	if err != nil {
 		return nil, err
 	}
@@ -771,5 +769,5 @@ func (s *service) GeneratePDFByID(id, userID, roleID uint) ([]byte, error) {
 		QRCodeBase64:       qrBase64,
 		GeneratedDate:      time.Now().Format("02/01/2006"),
 	}
-	return s.pdfSvc.Generate(data)
+	return s.pdfSvc.Generate(ctx, data)
 }

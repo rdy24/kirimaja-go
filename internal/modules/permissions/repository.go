@@ -1,14 +1,16 @@
 package permissions
 
 import (
+	"context"
+
 	"kirimaja-go/models"
 
 	"gorm.io/gorm"
 )
 
 type Repository interface {
-	FindAll() ([]models.Permission, error)
-	Create(p *models.Permission) error
+	FindAll(ctx context.Context) ([]models.Permission, error)
+	Create(ctx context.Context, p *models.Permission) error
 }
 
 type repository struct {
@@ -19,12 +21,12 @@ func NewRepository(db *gorm.DB) Repository {
 	return &repository{db}
 }
 
-func (r *repository) FindAll() ([]models.Permission, error) {
+func (r *repository) FindAll(ctx context.Context) ([]models.Permission, error) {
 	var perms []models.Permission
-	err := r.db.Find(&perms).Error
+	err := r.db.WithContext(ctx).Find(&perms).Error
 	return perms, err
 }
 
-func (r *repository) Create(p *models.Permission) error {
-	return r.db.Create(p).Error
+func (r *repository) Create(ctx context.Context, p *models.Permission) error {
+	return r.db.WithContext(ctx).Create(p).Error
 }

@@ -1,6 +1,7 @@
 package branches
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -8,11 +9,11 @@ import (
 )
 
 type Service interface {
-	FindAll() ([]BranchResponse, error)
-	FindByID(id uint) (*BranchResponse, error)
-	Create(req CreateBranchRequest) (*BranchResponse, error)
-	Update(id uint, req UpdateBranchRequest) (*BranchResponse, error)
-	Delete(id uint) error
+	FindAll(ctx context.Context) ([]BranchResponse, error)
+	FindByID(ctx context.Context, id uint) (*BranchResponse, error)
+	Create(ctx context.Context, req CreateBranchRequest) (*BranchResponse, error)
+	Update(ctx context.Context, id uint, req UpdateBranchRequest) (*BranchResponse, error)
+	Delete(ctx context.Context, id uint) error
 }
 
 type service struct {
@@ -23,8 +24,8 @@ func NewService(repo Repository) Service {
 	return &service{repo}
 }
 
-func (s *service) FindAll() ([]BranchResponse, error) {
-	list, err := s.repo.FindAll()
+func (s *service) FindAll(ctx context.Context) ([]BranchResponse, error) {
+	list, err := s.repo.FindAll(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -35,8 +36,8 @@ func (s *service) FindAll() ([]BranchResponse, error) {
 	return result, nil
 }
 
-func (s *service) FindByID(id uint) (*BranchResponse, error) {
-	b, err := s.repo.FindByID(id)
+func (s *service) FindByID(ctx context.Context, id uint) (*BranchResponse, error) {
+	b, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -47,17 +48,17 @@ func (s *service) FindByID(id uint) (*BranchResponse, error) {
 	return &res, nil
 }
 
-func (s *service) Create(req CreateBranchRequest) (*BranchResponse, error) {
+func (s *service) Create(ctx context.Context, req CreateBranchRequest) (*BranchResponse, error) {
 	b := &models.Branch{Name: req.Name, Address: req.Address, PhoneNumber: req.PhoneNumber}
-	if err := s.repo.Create(b); err != nil {
+	if err := s.repo.Create(ctx, b); err != nil {
 		return nil, err
 	}
 	res := toBranchResponse(*b)
 	return &res, nil
 }
 
-func (s *service) Update(id uint, req UpdateBranchRequest) (*BranchResponse, error) {
-	if _, err := s.FindByID(id); err != nil {
+func (s *service) Update(ctx context.Context, id uint, req UpdateBranchRequest) (*BranchResponse, error) {
+	if _, err := s.FindByID(ctx, id); err != nil {
 		return nil, errors.New("branch tidak ditemukan")
 	}
 	data := map[string]any{}
@@ -70,17 +71,17 @@ func (s *service) Update(id uint, req UpdateBranchRequest) (*BranchResponse, err
 	if req.PhoneNumber != "" {
 		data["phone_number"] = req.PhoneNumber
 	}
-	if err := s.repo.Update(id, data); err != nil {
+	if err := s.repo.Update(ctx, id, data); err != nil {
 		return nil, err
 	}
-	return s.FindByID(id)
+	return s.FindByID(ctx, id)
 }
 
-func (s *service) Delete(id uint) error {
-	if _, err := s.FindByID(id); err != nil {
+func (s *service) Delete(ctx context.Context, id uint) error {
+	if _, err := s.FindByID(ctx, id); err != nil {
 		return errors.New("branch tidak ditemukan")
 	}
-	return s.repo.Delete(id)
+	return s.repo.Delete(ctx, id)
 }
 
 func toBranchResponse(b models.Branch) BranchResponse {

@@ -1,10 +1,14 @@
 package permissions
 
-import "kirimaja-go/models"
+import (
+	"context"
+
+	"kirimaja-go/models"
+)
 
 type Service interface {
-	FindAll() ([]PermissionResponse, error)
-	Create(req CreatePermissionRequest) (*PermissionResponse, error)
+	FindAll(ctx context.Context) ([]PermissionResponse, error)
+	Create(ctx context.Context, req CreatePermissionRequest) (*PermissionResponse, error)
 }
 
 type service struct {
@@ -15,8 +19,8 @@ func NewService(repo Repository) Service {
 	return &service{repo}
 }
 
-func (s *service) FindAll() ([]PermissionResponse, error) {
-	perms, err := s.repo.FindAll()
+func (s *service) FindAll(ctx context.Context) ([]PermissionResponse, error) {
+	perms, err := s.repo.FindAll(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -27,9 +31,9 @@ func (s *service) FindAll() ([]PermissionResponse, error) {
 	return result, nil
 }
 
-func (s *service) Create(req CreatePermissionRequest) (*PermissionResponse, error) {
+func (s *service) Create(ctx context.Context, req CreatePermissionRequest) (*PermissionResponse, error) {
 	p := &models.Permission{Name: req.Name, Key: req.Key, Resource: req.Resource}
-	if err := s.repo.Create(p); err != nil {
+	if err := s.repo.Create(ctx, p); err != nil {
 		return nil, err
 	}
 	return &PermissionResponse{ID: p.ID, Name: p.Name, Key: p.Key, Resource: p.Resource}, nil

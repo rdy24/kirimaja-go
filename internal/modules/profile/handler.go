@@ -24,7 +24,7 @@ func NewHandler(svc Service, publicDir string) *Handler {
 
 func (h *Handler) FindOne(c *gin.Context) {
 	userID := c.MustGet("userID").(uint)
-	data, err := h.svc.FindOne(userID)
+	data, err := h.svc.FindOne(c.Request.Context(), userID)
 	if err != nil {
 		response.Error(c, http.StatusNotFound, err.Error(), nil)
 		return
@@ -43,7 +43,7 @@ func (h *Handler) Update(c *gin.Context) {
 		response.Error(c, http.StatusUnprocessableEntity, "Validation failed", err.Error())
 		return
 	}
-	data, err := h.svc.Update(userID, req)
+	data, err := h.svc.Update(c.Request.Context(), userID, req)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error(), nil)
 		return
@@ -75,7 +75,7 @@ func (h *Handler) UploadAvatar(c *gin.Context) {
 	}
 
 	avatarPath := "/uploads/photos/" + filename
-	data, err := h.svc.UpdateAvatar(userID, avatarPath)
+	data, err := h.svc.UpdateAvatar(c.Request.Context(), userID, avatarPath)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error(), nil)
 		return

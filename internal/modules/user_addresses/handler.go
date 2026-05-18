@@ -25,7 +25,7 @@ func NewHandler(svc Service, publicDir string) *Handler {
 
 func (h *Handler) FindAll(c *gin.Context) {
 	userID := c.MustGet("userID").(uint)
-	data, err := h.svc.FindAll(userID)
+	data, err := h.svc.FindAll(c.Request.Context(), userID)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to fetch addresses", nil)
 		return
@@ -35,7 +35,7 @@ func (h *Handler) FindAll(c *gin.Context) {
 
 func (h *Handler) FindByID(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	data, err := h.svc.FindByID(uint(id))
+	data, err := h.svc.FindByID(c.Request.Context(), uint(id))
 	if err != nil {
 		response.Error(c, http.StatusNotFound, err.Error(), nil)
 		return
@@ -67,7 +67,7 @@ func (h *Handler) Create(c *gin.Context) {
 		}
 	}
 
-	data, err := h.svc.Create(userID, req, photoPath)
+	data, err := h.svc.Create(c.Request.Context(), userID, req, photoPath)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error(), nil)
 		return
@@ -96,7 +96,7 @@ func (h *Handler) Update(c *gin.Context) {
 		}
 	}
 
-	data, err := h.svc.Update(uint(id), req, photoPath)
+	data, err := h.svc.Update(c.Request.Context(), uint(id), req, photoPath)
 	if err != nil {
 		response.Error(c, http.StatusNotFound, err.Error(), nil)
 		return
@@ -106,7 +106,7 @@ func (h *Handler) Update(c *gin.Context) {
 
 func (h *Handler) Delete(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err := h.svc.Delete(uint(id)); err != nil {
+	if err := h.svc.Delete(c.Request.Context(), uint(id)); err != nil {
 		response.Error(c, http.StatusNotFound, err.Error(), nil)
 		return
 	}

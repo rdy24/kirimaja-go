@@ -66,7 +66,7 @@ func NewHandler(svc shipments.CourierService, publicDir string) *Handler {
 }
 
 func (h *Handler) FindAll(c *gin.Context) {
-	list, err := h.svc.FindAllForCourier()
+	list, err := h.svc.FindAllForCourier(c.Request.Context())
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error(), nil)
 		return
@@ -78,7 +78,7 @@ func (h *Handler) PickShipment(c *gin.Context) {
 	tracking := c.Param("trackingNumber")
 	userID := c.GetUint("userID")
 
-	s, err := h.svc.PickShipment(tracking, userID)
+	s, err := h.svc.PickShipment(c.Request.Context(), tracking, userID)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
@@ -102,7 +102,7 @@ func (h *Handler) PickupShipment(c *gin.Context) {
 		return
 	}
 
-	s, err := h.svc.PickupShipment(tracking, userID, filename)
+	s, err := h.svc.PickupShipment(c.Request.Context(), tracking, userID, filename)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
@@ -114,7 +114,7 @@ func (h *Handler) DeliverToBranch(c *gin.Context) {
 	tracking := c.Param("trackingNumber")
 	userID := c.GetUint("userID")
 
-	s, err := h.svc.DeliverToBranch(tracking, userID)
+	s, err := h.svc.DeliverToBranch(c.Request.Context(), tracking, userID)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
@@ -126,7 +126,7 @@ func (h *Handler) PickShipmentFromBranch(c *gin.Context) {
 	tracking := c.Param("trackingNumber")
 	userID := c.GetUint("userID")
 
-	s, err := h.svc.PickShipmentFromBranch(tracking, userID)
+	s, err := h.svc.PickShipmentFromBranch(c.Request.Context(), tracking, userID)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
@@ -138,7 +138,7 @@ func (h *Handler) PickupShipmentFromBranch(c *gin.Context) {
 	tracking := c.Param("trackingNumber")
 	userID := c.GetUint("userID")
 
-	s, err := h.svc.PickupShipmentFromBranch(tracking, userID)
+	s, err := h.svc.PickupShipmentFromBranch(c.Request.Context(), tracking, userID)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
@@ -162,7 +162,7 @@ func (h *Handler) DeliverToCustomer(c *gin.Context) {
 		return
 	}
 
-	s, err := h.svc.DeliverToCustomer(tracking, userID, filename)
+	s, err := h.svc.DeliverToCustomer(c.Request.Context(), tracking, userID, filename)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return

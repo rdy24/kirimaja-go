@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -8,9 +9,9 @@ import (
 )
 
 type Service interface {
-	FindOne(userID uint) (*ProfileResponse, error)
-	Update(userID uint, req UpdateProfileRequest) (*ProfileResponse, error)
-	UpdateAvatar(userID uint, avatarPath string) (*ProfileResponse, error)
+	FindOne(ctx context.Context, userID uint) (*ProfileResponse, error)
+	Update(ctx context.Context, userID uint, req UpdateProfileRequest) (*ProfileResponse, error)
+	UpdateAvatar(ctx context.Context, userID uint, avatarPath string) (*ProfileResponse, error)
 }
 
 type service struct {
@@ -21,8 +22,8 @@ func NewService(repo Repository) Service {
 	return &service{repo}
 }
 
-func (s *service) FindOne(userID uint) (*ProfileResponse, error) {
-	user, err := s.repo.FindByID(userID)
+func (s *service) FindOne(ctx context.Context, userID uint) (*ProfileResponse, error) {
+	user, err := s.repo.FindByID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -38,8 +39,8 @@ func (s *service) FindOne(userID uint) (*ProfileResponse, error) {
 	}, nil
 }
 
-func (s *service) Update(userID uint, req UpdateProfileRequest) (*ProfileResponse, error) {
-	user, err := s.repo.FindByID(userID)
+func (s *service) Update(ctx context.Context, userID uint, req UpdateProfileRequest) (*ProfileResponse, error) {
+	user, err := s.repo.FindByID(ctx, userID)
 	if err != nil || user == nil {
 		return nil, errors.New("user not found")
 	}
@@ -63,20 +64,20 @@ func (s *service) Update(userID uint, req UpdateProfileRequest) (*ProfileRespons
 	}
 
 	if len(data) > 0 {
-		if err := s.repo.Update(userID, data); err != nil {
+		if err := s.repo.Update(ctx, userID, data); err != nil {
 			return nil, err
 		}
 	}
-	return s.FindOne(userID)
+	return s.FindOne(ctx, userID)
 }
 
-func (s *service) UpdateAvatar(userID uint, avatarPath string) (*ProfileResponse, error) {
-	user, err := s.repo.FindByID(userID)
+func (s *service) UpdateAvatar(ctx context.Context, userID uint, avatarPath string) (*ProfileResponse, error) {
+	user, err := s.repo.FindByID(ctx, userID)
 	if err != nil || user == nil {
 		return nil, errors.New("user not found")
 	}
-	if err := s.repo.Update(userID, map[string]any{"avatar": avatarPath}); err != nil {
+	if err := s.repo.Update(ctx, userID, map[string]any{"avatar": avatarPath}); err != nil {
 		return nil, err
 	}
-	return s.FindOne(userID)
+	return s.FindOne(ctx, userID)
 }

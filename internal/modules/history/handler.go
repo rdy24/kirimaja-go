@@ -16,7 +16,7 @@ func (h *Handler) FindAll(c *gin.Context) {
 	userID := c.GetUint("userID")
 	roleID := c.GetUint("roleID")
 
-	list, err := h.svc.FindAll(userID, roleID)
+	list, err := h.svc.FindAll(c.Request.Context(), userID, roleID)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error(), nil)
 		return
@@ -26,7 +26,7 @@ func (h *Handler) FindAll(c *gin.Context) {
 
 func (h *Handler) FindByID(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	data, err := h.svc.FindByID(uint(id))
+	data, err := h.svc.FindByID(c.Request.Context(), uint(id))
 	if err != nil {
 		response.Error(c, http.StatusNotFound, err.Error(), nil)
 		return

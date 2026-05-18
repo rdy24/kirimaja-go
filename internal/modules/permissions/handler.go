@@ -15,7 +15,7 @@ type Handler struct{ svc Service }
 func NewHandler(svc Service) *Handler { return &Handler{svc} }
 
 func (h *Handler) FindAll(c *gin.Context) {
-	data, err := h.svc.FindAll()
+	data, err := h.svc.FindAll(c.Request.Context())
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to fetch permissions", nil)
 		return
@@ -33,7 +33,7 @@ func (h *Handler) Create(c *gin.Context) {
 		response.Error(c, http.StatusUnprocessableEntity, "Validation failed", err.Error())
 		return
 	}
-	data, err := h.svc.Create(req)
+	data, err := h.svc.Create(c.Request.Context(), req)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to create permission", nil)
 		return

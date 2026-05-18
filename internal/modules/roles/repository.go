@@ -1,19 +1,21 @@
 package roles
 
 import (
-	"kirimaja-go/models"
+	"context"
 
 	"gorm.io/gorm"
+
+	"kirimaja-go/models"
 )
 
 type Repository interface {
-	FindAll() ([]models.Role, error)
-	FindByID(id uint) (*models.Role, error)
-	Create(role *models.Role) error
-	Update(id uint, data map[string]any) error
-	Delete(id uint) error
-	DeletePermissions(roleID uint) error
-	CreatePermissions(roleID uint, permissionIDs []uint) error
+	FindAll(ctx context.Context) ([]models.Role, error)
+	FindByID(ctx context.Context, id uint) (*models.Role, error)
+	Create(ctx context.Context, role *models.Role) error
+	Update(ctx context.Context, id uint, data map[string]any) error
+	Delete(ctx context.Context, id uint) error
+	DeletePermissions(ctx context.Context, roleID uint) error
+	CreatePermissions(ctx context.Context, roleID uint, permissionIDs []uint) error
 }
 
 type repository struct {
@@ -24,38 +26,38 @@ func NewRepository(db *gorm.DB) Repository {
 	return &repository{db}
 }
 
-func (r *repository) FindAll() ([]models.Role, error) {
+func (r *repository) FindAll(ctx context.Context) ([]models.Role, error) {
 	var roles []models.Role
-	err := r.db.Preload("RolePermissions.Permission").Find(&roles).Error
+	err := r.db.WithContext(ctx).Preload("RolePermissions.Permission").Find(&roles).Error
 	return roles, err
 }
 
-func (r *repository) FindByID(id uint) (*models.Role, error) {
+func (r *repository) FindByID(ctx context.Context, id uint) (*models.Role, error) {
 	var role models.Role
-	err := r.db.Preload("RolePermissions.Permission").First(&role, id).Error
+	err := r.db.WithContext(ctx).Preload("RolePermissions.Permission").First(&role, id).Error
 	if err == gorm.ErrRecordNotFound {
 		return nil, nil
 	}
 	return &role, err
 }
 
-func (r *repository) Create(role *models.Role) error {
-	return r.db.Create(role).Error
+func (r *repository) Create(ctx context.Context, role *models.Role) error {
+	return r.db.WithContext(ctx).Create(role).Error
 }
 
-func (r *repository) Update(id uint, data map[string]any) error {
-	return r.db.Model(&models.Role{}).Where("id = ?", id).Updates(data).Error
+func (r *repository) Update(ctx context.Context, id uint, data map[string]any) error {
+	return r.db.WithContext(ctx).Model(&models.Role{}).Where("id = ?", id).Updates(data).Error
 }
 
-func (r *repository) Delete(id uint) error {
-	return r.db.Delete(&models.Role{}, id).Error
+func (r *repository) Delete(ctx context.Context, id uint) error {
+	return r.db.WithContext(ctx).Delete(&models.Role{}, id).Error
 }
 
-func (r *repository) DeletePermissions(roleID uint) error {
-	return r.db.Where("role_id = ?", roleID).Delete(&models.RolePermission{}).Error
+func (r *repository) DeletePermissions(ctx context.Context, roleID uint) error {
+	return r.db.WithContext(ctx).Where("role_id = ?", roleID).Delete(&models.RolePermission{}).Error
 }
 
-func (r *repository) CreatePermissions(roleID uint, permissionIDs []uint) error {
+func (r *repository) CreatePermissions(ctx context.Context, roleID uint, permissionIDs []uint) error {
 	if len(permissionIDs) == 0 {
 		return nil
 	}
@@ -63,5 +65,5 @@ func (r *repository) CreatePermissions(roleID uint, permissionIDs []uint) error 
 	for _, pid := range permissionIDs {
 		records = append(records, models.RolePermission{RoleID: roleID, PermissionID: pid})
 	}
-	return r.db.Create(&records).Error
+	return r.db.WithContext(ctx).Create(&records).Error
 }

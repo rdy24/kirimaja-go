@@ -1,23 +1,25 @@
 package history
 
 import (
+	"context"
+
 	"kirimaja-go/models"
 
 	"gorm.io/gorm"
 )
 
 type Repository interface {
-	FindAll(userID uint, isSuperAdmin bool) ([]models.Shipment, error)
-	FindByID(id uint) (*models.Shipment, error)
+	FindAll(ctx context.Context, userID uint, isSuperAdmin bool) ([]models.Shipment, error)
+	FindByID(ctx context.Context, id uint) (*models.Shipment, error)
 }
 
 type repository struct{ db *gorm.DB }
 
 func NewRepository(db *gorm.DB) Repository { return &repository{db} }
 
-func (r *repository) FindAll(userID uint, isSuperAdmin bool) ([]models.Shipment, error) {
+func (r *repository) FindAll(ctx context.Context, userID uint, isSuperAdmin bool) ([]models.Shipment, error) {
 	var list []models.Shipment
-	q := r.db.
+	q := r.db.WithContext(ctx).
 		Preload("ShipmentDetail.User").
 		Preload("ShipmentDetail.Address").
 		Preload("ShipmentHistories", func(db *gorm.DB) *gorm.DB {
@@ -32,9 +34,9 @@ func (r *repository) FindAll(userID uint, isSuperAdmin bool) ([]models.Shipment,
 	return list, q.Find(&list).Error
 }
 
-func (r *repository) FindByID(id uint) (*models.Shipment, error) {
+func (r *repository) FindByID(ctx context.Context, id uint) (*models.Shipment, error) {
 	var s models.Shipment
-	err := r.db.
+	err := r.db.WithContext(ctx).
 		Preload("ShipmentDetail.User").
 		Preload("ShipmentDetail.Address").
 		Preload("ShipmentHistories", func(db *gorm.DB) *gorm.DB {

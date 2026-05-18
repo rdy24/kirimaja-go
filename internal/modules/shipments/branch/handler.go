@@ -20,7 +20,7 @@ func (h *Handler) FindAll(c *gin.Context) {
 	userID := c.GetUint("userID")
 	roleID := c.GetUint("roleID")
 
-	logs, err := h.svc.FindAllBranchLogs(userID, roleID)
+	logs, err := h.svc.FindAllBranchLogs(c.Request.Context(), userID, roleID)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
@@ -36,7 +36,7 @@ func (h *Handler) Scan(c *gin.Context) {
 	}
 
 	userID := c.GetUint("userID")
-	log, err := h.svc.ScanShipment(req, userID)
+	log, err := h.svc.ScanShipment(c.Request.Context(), req, userID)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return

@@ -28,7 +28,7 @@ func (h *Handler) Create(c *gin.Context) {
 		response.Error(c, http.StatusUnprocessableEntity, "Validation failed", err.Error())
 		return
 	}
-	data, err := h.svc.Create(userID, req)
+	data, err := h.svc.Create(c.Request.Context(), userID, req)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error(), nil)
 		return
@@ -38,7 +38,7 @@ func (h *Handler) Create(c *gin.Context) {
 
 func (h *Handler) FindAll(c *gin.Context) {
 	userID := c.MustGet("userID").(uint)
-	data, err := h.svc.FindAll(userID)
+	data, err := h.svc.FindAll(c.Request.Context(), userID)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to fetch shipments", nil)
 		return
@@ -50,7 +50,7 @@ func (h *Handler) FindByID(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	userID := c.MustGet("userID").(uint)
 	roleID := c.GetUint("roleID")
-	data, err := h.svc.FindByID(uint(id), userID, roleID)
+	data, err := h.svc.FindByID(c.Request.Context(), uint(id), userID, roleID)
 	if err != nil {
 		respondShipmentErr(c, err)
 		return
@@ -62,7 +62,7 @@ func (h *Handler) FindByTracking(c *gin.Context) {
 	tracking := c.Param("trackingNumber")
 	userID := c.MustGet("userID").(uint)
 	roleID := c.GetUint("roleID")
-	data, err := h.svc.FindByTrackingNumber(tracking, userID, roleID)
+	data, err := h.svc.FindByTrackingNumber(c.Request.Context(), tracking, userID, roleID)
 	if err != nil {
 		respondShipmentErr(c, err)
 		return
@@ -85,7 +85,7 @@ func (h *Handler) GeneratePDF(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	userID := c.MustGet("userID").(uint)
 	roleID := c.GetUint("roleID")
-	pdfBytes, err := h.svc.GeneratePDFByID(uint(id), userID, roleID)
+	pdfBytes, err := h.svc.GeneratePDFByID(c.Request.Context(), uint(id), userID, roleID)
 	if err != nil {
 		if errors.Is(err, ErrForbidden) {
 			response.Error(c, http.StatusForbidden, err.Error(), nil)

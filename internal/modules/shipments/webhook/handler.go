@@ -23,7 +23,7 @@ func (h *Handler) HandleMidtrans(c *gin.Context) {
 		return
 	}
 
-	err := h.svc.HandleWebhook(shipments.WebhookPayload{
+	err := h.svc.HandleWebhook(c.Request.Context(), shipments.WebhookPayload{
 		TransactionID:     payload.TransactionID,
 		TransactionStatus: payload.TransactionStatus,
 		OrderID:           payload.OrderID,

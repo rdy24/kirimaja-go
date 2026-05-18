@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -16,8 +17,8 @@ var (
 )
 
 type Service interface {
-	Login(req LoginRequest) (*AuthResponse, error)
-	Register(req RegisterRequest) (*AuthResponse, error)
+	Login(ctx context.Context, req LoginRequest) (*AuthResponse, error)
+	Register(ctx context.Context, req RegisterRequest) (*AuthResponse, error)
 }
 
 type service struct {
@@ -30,8 +31,8 @@ func NewService(repo Repository, jwtSecret, jwtExpiresIn string) Service {
 	return &service{repo, jwtSecret, jwtExpiresIn}
 }
 
-func (s *service) Login(req LoginRequest) (*AuthResponse, error) {
-	user, err := s.repo.FindUserByEmail(req.Email)
+func (s *service) Login(ctx context.Context, req LoginRequest) (*AuthResponse, error) {
+	user, err := s.repo.FindUserByEmail(ctx, req.Email)
 	if err != nil {
 		return nil, err
 	}
@@ -51,8 +52,8 @@ func (s *service) Login(req LoginRequest) (*AuthResponse, error) {
 	return buildAuthResponse(token, user), nil
 }
 
-func (s *service) Register(req RegisterRequest) (*AuthResponse, error) {
-	existing, err := s.repo.FindUserByEmail(req.Email)
+func (s *service) Register(ctx context.Context, req RegisterRequest) (*AuthResponse, error) {
+	existing, err := s.repo.FindUserByEmail(ctx, req.Email)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +61,7 @@ func (s *service) Register(req RegisterRequest) (*AuthResponse, error) {
 		return nil, ErrEmailRegistered
 	}
 
-	role, err := s.repo.FindRoleByKey("customer")
+	role, err := s.repo.FindRoleByKey(ctx, "customer")
 	if err != nil {
 		return nil, err
 	}
@@ -80,12 +81,12 @@ func (s *service) Register(req RegisterRequest) (*AuthResponse, error) {
 		PhoneNumber: req.PhoneNumber,
 		RoleID:      role.ID,
 	}
-	if err := s.repo.CreateUser(user); err != nil {
+	if err := s.repo.CreateUser(ctx, user); err != nil {
 		return nil, err
 	}
 
 	// Reload user with role + permissions
-	user, err = s.repo.FindUserByEmail(req.Email)
+	user, err = s.repo.FindUserByEmail(ctx, req.Email)
 	if err != nil || user == nil {
 		return nil, errors.New("failed to load created user")
 	}

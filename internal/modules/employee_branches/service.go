@@ -1,6 +1,7 @@
 package employee_branches
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -9,11 +10,11 @@ import (
 )
 
 type Service interface {
-	FindAll() ([]EmployeeBranchResponse, error)
-	FindByID(id uint) (*EmployeeBranchResponse, error)
-	Create(req CreateEmployeeBranchRequest) (*EmployeeBranchResponse, error)
-	Update(id uint, req UpdateEmployeeBranchRequest) (*EmployeeBranchResponse, error)
-	Delete(id uint) error
+	FindAll(ctx context.Context) ([]EmployeeBranchResponse, error)
+	FindByID(ctx context.Context, id uint) (*EmployeeBranchResponse, error)
+	Create(ctx context.Context, req CreateEmployeeBranchRequest) (*EmployeeBranchResponse, error)
+	Update(ctx context.Context, id uint, req UpdateEmployeeBranchRequest) (*EmployeeBranchResponse, error)
+	Delete(ctx context.Context, id uint) error
 }
 
 type service struct {
@@ -24,8 +25,8 @@ func NewService(repo Repository) Service {
 	return &service{repo}
 }
 
-func (s *service) FindAll() ([]EmployeeBranchResponse, error) {
-	list, err := s.repo.FindAll()
+func (s *service) FindAll(ctx context.Context) ([]EmployeeBranchResponse, error) {
+	list, err := s.repo.FindAll(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -36,8 +37,8 @@ func (s *service) FindAll() ([]EmployeeBranchResponse, error) {
 	return result, nil
 }
 
-func (s *service) FindByID(id uint) (*EmployeeBranchResponse, error) {
-	eb, err := s.repo.FindByID(id)
+func (s *service) FindByID(ctx context.Context, id uint) (*EmployeeBranchResponse, error) {
+	eb, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -48,8 +49,8 @@ func (s *service) FindByID(id uint) (*EmployeeBranchResponse, error) {
 	return &res, nil
 }
 
-func (s *service) Create(req CreateEmployeeBranchRequest) (*EmployeeBranchResponse, error) {
-	existing, err := s.repo.FindUserByEmail(req.Email)
+func (s *service) Create(ctx context.Context, req CreateEmployeeBranchRequest) (*EmployeeBranchResponse, error) {
+	existing, err := s.repo.FindUserByEmail(ctx, req.Email)
 	if err != nil {
 		return nil, err
 	}
@@ -57,10 +58,10 @@ func (s *service) Create(req CreateEmployeeBranchRequest) (*EmployeeBranchRespon
 		return nil, fmt.Errorf("email %s is already in use", req.Email)
 	}
 
-	if branch, _ := s.repo.FindBranchByID(req.BranchID); branch == nil {
+	if branch, _ := s.repo.FindBranchByID(ctx, req.BranchID); branch == nil {
 		return nil, fmt.Errorf("branch with ID %d does not exist", req.BranchID)
 	}
-	if role, _ := s.repo.FindRoleByID(req.RoleID); role == nil {
+	if role, _ := s.repo.FindRoleByID(ctx, req.RoleID); role == nil {
 		return nil, fmt.Errorf("role with ID %d does not exist", req.RoleID)
 	}
 
@@ -79,31 +80,31 @@ func (s *service) Create(req CreateEmployeeBranchRequest) (*EmployeeBranchRespon
 	}
 	eb := &models.EmployeeBranch{BranchID: req.BranchID, Type: req.Type}
 
-	if err := s.repo.CreateWithUser(user, eb); err != nil {
+	if err := s.repo.CreateWithUser(ctx, user, eb); err != nil {
 		return nil, err
 	}
-	return s.FindByID(eb.ID)
+	return s.FindByID(ctx, eb.ID)
 }
 
-func (s *service) Update(id uint, req UpdateEmployeeBranchRequest) (*EmployeeBranchResponse, error) {
-	existing, err := s.repo.FindByID(id)
+func (s *service) Update(ctx context.Context, id uint, req UpdateEmployeeBranchRequest) (*EmployeeBranchResponse, error) {
+	existing, err := s.repo.FindByID(ctx, id)
 	if err != nil || existing == nil {
 		return nil, fmt.Errorf("employee branch with ID %d not found", id)
 	}
 
 	if req.Email != "" {
-		user, _ := s.repo.FindUserByEmail(req.Email)
+		user, _ := s.repo.FindUserByEmail(ctx, req.Email)
 		if user != nil && user.ID != existing.UserID {
 			return nil, fmt.Errorf("email %s is already in use", req.Email)
 		}
 	}
 	if req.BranchID != 0 {
-		if branch, _ := s.repo.FindBranchByID(req.BranchID); branch == nil {
+		if branch, _ := s.repo.FindBranchByID(ctx, req.BranchID); branch == nil {
 			return nil, fmt.Errorf("branch with ID %d does not exist", req.BranchID)
 		}
 	}
 	if req.RoleID != 0 {
-		if role, _ := s.repo.FindRoleByID(req.RoleID); role == nil {
+		if role, _ := s.repo.FindRoleByID(ctx, req.RoleID); role == nil {
 			return nil, fmt.Errorf("role with ID %d does not exist", req.RoleID)
 		}
 	}
@@ -140,18 +141,18 @@ func (s *service) Update(id uint, req UpdateEmployeeBranchRequest) (*EmployeeBra
 		ebData["type"] = req.Type
 	}
 
-	if err := s.repo.UpdateWithUser(existing, userData, ebData); err != nil {
+	if err := s.repo.UpdateWithUser(ctx, existing, userData, ebData); err != nil {
 		return nil, err
 	}
-	return s.FindByID(id)
+	return s.FindByID(ctx, id)
 }
 
-func (s *service) Delete(id uint) error {
-	existing, err := s.repo.FindByID(id)
+func (s *service) Delete(ctx context.Context, id uint) error {
+	existing, err := s.repo.FindByID(ctx, id)
 	if err != nil || existing == nil {
 		return fmt.Errorf("employee branch with ID %d not found", id)
 	}
-	return s.repo.DeleteWithUser(existing)
+	return s.repo.DeleteWithUser(ctx, existing)
 }
 
 func toResponse(eb models.EmployeeBranch) EmployeeBranchResponse {

@@ -16,7 +16,7 @@ type Handler struct{ svc Service }
 func NewHandler(svc Service) *Handler { return &Handler{svc} }
 
 func (h *Handler) FindAll(c *gin.Context) {
-	data, err := h.svc.FindAll()
+	data, err := h.svc.FindAll(c.Request.Context())
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to fetch employee branches", nil)
 		return
@@ -26,7 +26,7 @@ func (h *Handler) FindAll(c *gin.Context) {
 
 func (h *Handler) FindByID(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	data, err := h.svc.FindByID(uint(id))
+	data, err := h.svc.FindByID(c.Request.Context(), uint(id))
 	if err != nil {
 		response.Error(c, http.StatusNotFound, err.Error(), nil)
 		return
@@ -44,7 +44,7 @@ func (h *Handler) Create(c *gin.Context) {
 		response.Error(c, http.StatusUnprocessableEntity, "Validation failed", err.Error())
 		return
 	}
-	data, err := h.svc.Create(req)
+	data, err := h.svc.Create(c.Request.Context(), req)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
@@ -63,7 +63,7 @@ func (h *Handler) Update(c *gin.Context) {
 		response.Error(c, http.StatusUnprocessableEntity, "Validation failed", err.Error())
 		return
 	}
-	data, err := h.svc.Update(uint(id), req)
+	data, err := h.svc.Update(c.Request.Context(), uint(id), req)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
@@ -73,7 +73,7 @@ func (h *Handler) Update(c *gin.Context) {
 
 func (h *Handler) Delete(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err := h.svc.Delete(uint(id)); err != nil {
+	if err := h.svc.Delete(c.Request.Context(), uint(id)); err != nil {
 		response.Error(c, http.StatusNotFound, err.Error(), nil)
 		return
 	}

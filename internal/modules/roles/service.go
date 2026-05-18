@@ -1,6 +1,7 @@
 package roles
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -8,11 +9,11 @@ import (
 )
 
 type Service interface {
-	FindAll() ([]RoleResponse, error)
-	FindByID(id uint) (*RoleResponse, error)
-	Create(req CreateRoleRequest) (*RoleResponse, error)
-	Update(id uint, req UpdateRoleRequest) (*RoleResponse, error)
-	Delete(id uint) error
+	FindAll(ctx context.Context) ([]RoleResponse, error)
+	FindByID(ctx context.Context, id uint) (*RoleResponse, error)
+	Create(ctx context.Context, req CreateRoleRequest) (*RoleResponse, error)
+	Update(ctx context.Context, id uint, req UpdateRoleRequest) (*RoleResponse, error)
+	Delete(ctx context.Context, id uint) error
 }
 
 type service struct {
@@ -23,8 +24,8 @@ func NewService(repo Repository) Service {
 	return &service{repo}
 }
 
-func (s *service) FindAll() ([]RoleResponse, error) {
-	roles, err := s.repo.FindAll()
+func (s *service) FindAll(ctx context.Context) ([]RoleResponse, error) {
+	roles, err := s.repo.FindAll(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -35,8 +36,8 @@ func (s *service) FindAll() ([]RoleResponse, error) {
 	return result, nil
 }
 
-func (s *service) FindByID(id uint) (*RoleResponse, error) {
-	role, err := s.repo.FindByID(id)
+func (s *service) FindByID(ctx context.Context, id uint) (*RoleResponse, error) {
+	role, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -47,32 +48,32 @@ func (s *service) FindByID(id uint) (*RoleResponse, error) {
 	return &res, nil
 }
 
-func (s *service) Create(req CreateRoleRequest) (*RoleResponse, error) {
+func (s *service) Create(ctx context.Context, req CreateRoleRequest) (*RoleResponse, error) {
 	role := &models.Role{Name: req.Name, Key: req.Key}
-	if err := s.repo.Create(role); err != nil {
+	if err := s.repo.Create(ctx, role); err != nil {
 		return nil, err
 	}
-	return s.FindByID(role.ID)
+	return s.FindByID(ctx, role.ID)
 }
 
-func (s *service) Update(id uint, req UpdateRoleRequest) (*RoleResponse, error) {
-	if _, err := s.FindByID(id); err != nil {
+func (s *service) Update(ctx context.Context, id uint, req UpdateRoleRequest) (*RoleResponse, error) {
+	if _, err := s.FindByID(ctx, id); err != nil {
 		return nil, errors.New("role tidak ditemukan")
 	}
-	if err := s.repo.DeletePermissions(id); err != nil {
+	if err := s.repo.DeletePermissions(ctx, id); err != nil {
 		return nil, err
 	}
-	if err := s.repo.CreatePermissions(id, req.PermissionIDs); err != nil {
+	if err := s.repo.CreatePermissions(ctx, id, req.PermissionIDs); err != nil {
 		return nil, err
 	}
-	return s.FindByID(id)
+	return s.FindByID(ctx, id)
 }
 
-func (s *service) Delete(id uint) error {
-	if _, err := s.FindByID(id); err != nil {
+func (s *service) Delete(ctx context.Context, id uint) error {
+	if _, err := s.FindByID(ctx, id); err != nil {
 		return errors.New("role tidak ditemukan")
 	}
-	return s.repo.Delete(id)
+	return s.repo.Delete(ctx, id)
 }
 
 func toRoleResponse(r models.Role) RoleResponse {

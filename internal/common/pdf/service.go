@@ -39,11 +39,17 @@ type ShipmentData struct {
 	GeneratedDate      string
 }
 
+// maxConcurrentPDF caps how many headless-Chrome renders run at once. PDF
+// generation spawns a Chrome instance; without a ceiling a burst of requests
+// exhausts memory (effectively a DoS).
+const maxConcurrentPDF = 4
+
 type Service struct {
 	allocCtx    context.Context
 	allocCancel context.CancelFunc
 	publicDir   string
 	tmpl        *template.Template
+	sem         chan struct{}
 }
 
 func New(publicDir string) (*Service, func()) {
@@ -57,24 +63,36 @@ func New(publicDir string) (*Service, func()) {
 		allocCancel: cancel,
 		publicDir:   publicDir,
 		tmpl:        template.Must(template.New("shipping").Parse(htmlTemplate)),
+		sem:         make(chan struct{}, maxConcurrentPDF),
 	}
 	return svc, cancel
 }
 
-func (s *Service) Generate(data ShipmentData) ([]byte, error) {
+func (s *Service) Generate(ctx context.Context, data ShipmentData) ([]byte, error) {
+	// Acquire a render slot; give up immediately if the request is already
+	// gone instead of queueing work nobody is waiting for.
+	select {
+	case s.sem <- struct{}{}:
+		defer func() { <-s.sem }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
 	var buf bytes.Buffer
 	if err := s.tmpl.Execute(&buf, data); err != nil {
 		return nil, fmt.Errorf("render template: %w", err)
 	}
 	htmlContent := buf.String()
 
-	ctx, cancel := chromedp.NewContext(s.allocCtx)
+	chromeCtx, cancel := chromedp.NewContext(s.allocCtx)
 	defer cancel()
-	ctx, cancelTimeout := context.WithTimeout(ctx, 30*time.Second)
+	// Free the Chrome instance early if the originating request is cancelled.
+	defer context.AfterFunc(ctx, cancel)()
+	chromeCtx, cancelTimeout := context.WithTimeout(chromeCtx, 30*time.Second)
 	defer cancelTimeout()
 
 	var pdfBuf []byte
-	err := chromedp.Run(ctx,
+	err := chromedp.Run(chromeCtx,
 		chromedp.Navigate("about:blank"),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			frameTree, err := page.GetFrameTree().Do(ctx)

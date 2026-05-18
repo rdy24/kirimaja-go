@@ -30,7 +30,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.Login(req)
+	result, err := h.svc.Login(c.Request.Context(), req)
 	if err != nil {
 		if errors.Is(err, ErrInvalidCredentials) {
 			response.Error(c, http.StatusUnauthorized, err.Error(), nil)
@@ -54,7 +54,7 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.Register(req)
+	result, err := h.svc.Register(c.Request.Context(), req)
 	if err != nil {
 		if errors.Is(err, ErrEmailRegistered) {
 			response.Error(c, http.StatusConflict, err.Error(), nil)
