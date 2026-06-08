@@ -6,12 +6,12 @@ import (
 	"encoding/base64"
 	"fmt"
 	"html/template"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
+
+	"kirimaja-go/internal/common/storage"
 )
 
 type ShipmentData struct {
@@ -47,12 +47,12 @@ const maxConcurrentPDF = 4
 type Service struct {
 	allocCtx    context.Context
 	allocCancel context.CancelFunc
-	publicDir   string
+	store       storage.Store
 	tmpl        *template.Template
 	sem         chan struct{}
 }
 
-func New(publicDir string) (*Service, func()) {
+func New(store storage.Store) (*Service, func()) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-setuid-sandbox", true),
@@ -61,7 +61,7 @@ func New(publicDir string) (*Service, func()) {
 	svc := &Service{
 		allocCtx:    allocCtx,
 		allocCancel: cancel,
-		publicDir:   publicDir,
+		store:       store,
 		tmpl:        template.Must(template.New("shipping").Parse(htmlTemplate)),
 		sem:         make(chan struct{}, maxConcurrentPDF),
 	}
@@ -117,12 +117,11 @@ func (s *Service) Generate(ctx context.Context, data ShipmentData) ([]byte, erro
 	return pdfBuf, err
 }
 
-func (s *Service) QRBase64(qrWebPath string) string {
-	if qrWebPath == "" {
+func (s *Service) QRBase64(ctx context.Context, key string) string {
+	if key == "" {
 		return ""
 	}
-	path := filepath.Join(s.publicDir, qrWebPath)
-	data, err := os.ReadFile(path)
+	data, err := s.store.Get(ctx, key)
 	if err != nil {
 		return ""
 	}

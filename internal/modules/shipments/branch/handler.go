@@ -5,15 +5,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"kirimaja-go/internal/common/response"
+	"kirimaja-go/internal/common/storage"
 	"kirimaja-go/internal/modules/shipments"
 )
 
 type Handler struct {
-	svc shipments.BranchService
+	svc   shipments.BranchService
+	store storage.Store
 }
 
-func NewHandler(svc shipments.BranchService) *Handler {
-	return &Handler{svc}
+func NewHandler(svc shipments.BranchService, store storage.Store) *Handler {
+	return &Handler{svc, store}
 }
 
 func (h *Handler) FindAll(c *gin.Context) {
@@ -25,7 +27,9 @@ func (h *Handler) FindAll(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipment logs retrieved successfully", shipments.ToBranchLogResponses(logs))
+	resp := shipments.ToBranchLogResponses(logs)
+	shipments.PresignBranchLogs(c.Request.Context(), h.store, resp)
+	response.Success(c, http.StatusOK, "Shipment logs retrieved successfully", resp)
 }
 
 func (h *Handler) Scan(c *gin.Context) {
@@ -41,5 +45,7 @@ func (h *Handler) Scan(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipment scanned successfully", shipments.ToBranchLogResponse(log))
+	resp := shipments.ToBranchLogResponse(log)
+	shipments.PresignBranchLog(c.Request.Context(), h.store, resp)
+	response.Success(c, http.StatusOK, "Shipment scanned successfully", resp)
 }

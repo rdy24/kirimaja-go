@@ -9,13 +9,19 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 	"kirimaja-go/internal/common/response"
+	"kirimaja-go/internal/common/storage"
 )
 
 var validate = validator.New()
 
-type Handler struct{ svc ShipmentService }
+type Handler struct {
+	svc   ShipmentService
+	store storage.Store
+}
 
-func NewHandler(svc ShipmentService) *Handler { return &Handler{svc} }
+func NewHandler(svc ShipmentService, store storage.Store) *Handler {
+	return &Handler{svc, store}
+}
 
 func (h *Handler) Create(c *gin.Context) {
 	userID := c.MustGet("userID").(uint)
@@ -33,7 +39,9 @@ func (h *Handler) Create(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusCreated, "Shipment created successfully", ToShipmentResponse(data))
+	resp := ToShipmentResponse(data)
+	PresignShipment(c.Request.Context(), h.store, resp)
+	response.Success(c, http.StatusCreated, "Shipment created successfully", resp)
 }
 
 func (h *Handler) FindAll(c *gin.Context) {
@@ -43,7 +51,9 @@ func (h *Handler) FindAll(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, "Failed to fetch shipments", nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipments retrieved successfully", ToShipmentResponses(data))
+	resp := ToShipmentResponses(data)
+	PresignShipments(c.Request.Context(), h.store, resp)
+	response.Success(c, http.StatusOK, "Shipments retrieved successfully", resp)
 }
 
 func (h *Handler) FindByID(c *gin.Context) {
@@ -55,7 +65,9 @@ func (h *Handler) FindByID(c *gin.Context) {
 		respondShipmentErr(c, err)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipment retrieved successfully", ToShipmentResponse(data))
+	resp := ToShipmentResponse(data)
+	PresignShipment(c.Request.Context(), h.store, resp)
+	response.Success(c, http.StatusOK, "Shipment retrieved successfully", resp)
 }
 
 func (h *Handler) FindByTracking(c *gin.Context) {
@@ -67,7 +79,9 @@ func (h *Handler) FindByTracking(c *gin.Context) {
 		respondShipmentErr(c, err)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipment retrieved successfully", ToShipmentResponse(data))
+	resp := ToShipmentResponse(data)
+	PresignShipment(c.Request.Context(), h.store, resp)
+	response.Success(c, http.StatusOK, "Shipment retrieved successfully", resp)
 }
 
 // respondShipmentErr maps a forbidden access to 403 (not 404, which would

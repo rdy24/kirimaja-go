@@ -1,10 +1,67 @@
 package shipments
 
 import (
+	"context"
 	"time"
 
+	"kirimaja-go/internal/common/storage"
 	"kirimaja-go/models"
 )
+
+// presign turns a stored object key into a short-lived URL. Best-effort: on
+// failure (or empty key) the field becomes nil rather than leaking a key the
+// client cannot use anyway.
+func presign(ctx context.Context, st storage.Store, key *string) *string {
+	if key == nil || *key == "" {
+		return nil
+	}
+	u, err := st.PresignedURL(ctx, *key)
+	if err != nil {
+		return nil
+	}
+	return &u
+}
+
+// PresignShipment rewrites every stored object key in the response graph
+// (QR, proof photos, avatar, address photo) to a presigned URL in place.
+func PresignShipment(ctx context.Context, st storage.Store, r *ShipmentResponse) {
+	if r == nil {
+		return
+	}
+	r.QrCodeImage = presign(ctx, st, r.QrCodeImage)
+	if d := r.ShipmentDetail; d != nil {
+		d.PickupProof = presign(ctx, st, d.PickupProof)
+		d.ReceiptProof = presign(ctx, st, d.ReceiptProof)
+		if d.User != nil {
+			d.User.Avatar = presign(ctx, st, d.User.Avatar)
+		}
+		if d.Address != nil {
+			d.Address.Photo = presign(ctx, st, d.Address.Photo)
+		}
+	}
+}
+
+func PresignShipments(ctx context.Context, st storage.Store, list []ShipmentResponse) {
+	for i := range list {
+		PresignShipment(ctx, st, &list[i])
+	}
+}
+
+func PresignBranchLog(ctx context.Context, st storage.Store, r *ShipmentBranchLogResponse) {
+	if r == nil {
+		return
+	}
+	if r.ScannedByUser != nil {
+		r.ScannedByUser.Avatar = presign(ctx, st, r.ScannedByUser.Avatar)
+	}
+	PresignShipment(ctx, st, r.Shipment)
+}
+
+func PresignBranchLogs(ctx context.Context, st storage.Store, list []ShipmentBranchLogResponse) {
+	for i := range list {
+		PresignBranchLog(ctx, st, &list[i])
+	}
+}
 
 // Response DTOs decouple the HTTP contract from the GORM models. Unlike the
 // raw models (value-type relations with ineffective `omitempty` that leak

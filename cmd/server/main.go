@@ -17,6 +17,7 @@ import (
 	"kirimaja-go/internal/common/opencage"
 	"kirimaja-go/internal/common/pdf"
 	"kirimaja-go/internal/common/qrcode"
+	"kirimaja-go/internal/common/storage"
 	"kirimaja-go/internal/common/worker"
 	"kirimaja-go/internal/config"
 	"kirimaja-go/internal/database"
@@ -44,10 +45,24 @@ func main() {
 		log.Fatalf("Database connection failed: %v", err)
 	}
 
+	// Object storage (MinIO)
+	store, err := storage.New(storage.Config{
+		Endpoint:       cfg.MinIOEndpoint,
+		PublicEndpoint: cfg.MinIOPublicEndpoint,
+		AccessKey:      cfg.MinIOAccessKey,
+		SecretKey:      cfg.MinIOSecretKey,
+		Bucket:         cfg.MinIOBucket,
+		UseSSL:         cfg.MinIOUseSSL,
+		PresignExpiry:  cfg.MinIOPresignExpiry,
+	})
+	if err != nil {
+		log.Fatalf("Object storage init failed: %v", err)
+	}
+
 	// Common clients
 	geoCli := opencage.New(cfg.OpenCageAPIKey)
 	mtCli := midtrans.New(cfg.MidtransServerKey, cfg.MidtransEnv)
-	qrSvc := qrcode.New(cfg.PublicDir)
+	qrSvc := qrcode.New(store)
 
 	// Email + worker
 	smtpPort := 587
@@ -59,7 +74,7 @@ func main() {
 	defer workerServer.Shutdown()
 
 	// PDF
-	pdfSvc, closePDF := pdf.New(cfg.PublicDir)
+	pdfSvc, closePDF := pdf.New(store)
 	defer closePDF()
 
 	// Middleware
@@ -94,23 +109,22 @@ func main() {
 	// Profile
 	profileRepo := profile.NewRepository(db)
 	profileSvc := profile.NewService(profileRepo)
-	profileHdlr := profile.NewHandler(profileSvc, cfg.PublicDir)
+	profileHdlr := profile.NewHandler(profileSvc, store)
 
 	// User Addresses
 	uaRepo := user_addresses.NewRepository(db)
 	uaSvc := user_addresses.NewService(uaRepo, geoCli)
-	uaHdlr := user_addresses.NewHandler(uaSvc, cfg.PublicDir)
+	uaHdlr := user_addresses.NewHandler(uaSvc, store)
 
 	// Shipments
 	shipmentsRepo := shipments.NewRepository(db)
 	shipmentsSvc := shipments.NewService(shipmentsRepo, geoCli, mtCli, qrSvc, workerClient, pdfSvc)
-	shipmentsHdlr := shipments.NewHandler(shipmentsSvc)
+	shipmentsHdlr := shipments.NewHandler(shipmentsSvc, store)
 	webhookHdlr := webhook.NewHandler(shipmentsSvc)
-	branchHdlr := branch.NewHandler(shipmentsSvc)
-	courierHdlr := courier.NewHandler(shipmentsSvc, cfg.PublicDir)
+	branchHdlr := branch.NewHandler(shipmentsSvc, store)
+	courierHdlr := courier.NewHandler(shipmentsSvc, store)
 
 	r := gin.Default()
-	r.Static("/uploads", cfg.PublicDir+"/uploads")
 
 	api := r.Group("/api/v1")
 	auth.RegisterRoutes(api, authHdlr)

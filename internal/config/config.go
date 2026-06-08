@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -25,6 +26,14 @@ type Config struct {
 	FrontendURL       string
 	PublicDir         string
 	AppEnv            string
+
+	MinIOEndpoint       string
+	MinIOPublicEndpoint string
+	MinIOAccessKey      string
+	MinIOSecretKey      string
+	MinIOBucket         string
+	MinIOUseSSL         bool
+	MinIOPresignExpiry  time.Duration
 }
 
 func Load() *Config {
@@ -48,7 +57,22 @@ func Load() *Config {
 		FrontendURL:       getEnv("FRONTEND_URL", "http://localhost:5173"),
 		PublicDir:         getEnv("PUBLIC_DIR", "./public"),
 		AppEnv:            getEnv("APP_ENV", "development"),
+
+		MinIOEndpoint:       getEnv("MINIO_ENDPOINT", ""),
+		MinIOPublicEndpoint: getEnv("MINIO_PUBLIC_ENDPOINT", ""),
+		MinIOAccessKey:      getEnv("MINIO_ACCESS_KEY", ""),
+		MinIOSecretKey:      getEnv("MINIO_SECRET_KEY", ""),
+		MinIOBucket:         getEnv("MINIO_BUCKET", "kirimaja"),
+		MinIOUseSSL:         getEnv("MINIO_USE_SSL", "false") == "true",
+		MinIOPresignExpiry:  parseDuration(getEnv("MINIO_PRESIGN_EXPIRY", "15m"), 15*time.Minute),
 	}
+}
+
+func parseDuration(s string, fallback time.Duration) time.Duration {
+	if d, err := time.ParseDuration(s); err == nil {
+		return d
+	}
+	return fallback
 }
 
 // Validate fails fast on missing critical configuration. An empty JWT secret
@@ -64,6 +88,16 @@ func (c *Config) Validate() {
 	}
 	if c.MidtransServerKey == "" {
 		missing = append(missing, "MIDTRANS_SERVER_KEY")
+	}
+	// Cutover to MinIO is full — without it uploads/QR/PDF break entirely.
+	if c.MinIOEndpoint == "" {
+		missing = append(missing, "MINIO_ENDPOINT")
+	}
+	if c.MinIOAccessKey == "" {
+		missing = append(missing, "MINIO_ACCESS_KEY")
+	}
+	if c.MinIOSecretKey == "" {
+		missing = append(missing, "MINIO_SECRET_KEY")
 	}
 	if len(missing) > 0 {
 		log.Fatalf("config: required environment variables not set: %s", strings.Join(missing, ", "))

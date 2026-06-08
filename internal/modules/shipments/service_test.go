@@ -108,7 +108,10 @@ func (f fakeGateway) VerifyWebhookSignature(string, string, string) func(string)
 
 type fakeQR struct{ calls int }
 
-func (f *fakeQR) Generate(string) (string, error) { f.calls++; return "/qrcodes/x.png", nil }
+func (f *fakeQR) Generate(context.Context, string) (string, error) {
+	f.calls++
+	return "qrcodes/x.png", nil
+}
 
 type fakeTask struct{ successCalls int }
 

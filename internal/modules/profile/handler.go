@@ -9,17 +9,30 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 	"kirimaja-go/internal/common/response"
+	"kirimaja-go/internal/common/storage"
 )
 
 var validate = validator.New()
 
 type Handler struct {
-	svc       Service
-	publicDir string
+	svc   Service
+	store storage.Store
 }
 
-func NewHandler(svc Service, publicDir string) *Handler {
-	return &Handler{svc, publicDir}
+func NewHandler(svc Service, store storage.Store) *Handler {
+	return &Handler{svc, store}
+}
+
+// withAvatarURL swaps the stored avatar object key for a presigned URL.
+func (h *Handler) withAvatarURL(c *gin.Context, p *ProfileResponse) *ProfileResponse {
+	if p != nil && p.Avatar != nil && *p.Avatar != "" {
+		if u, err := h.store.PresignedURL(c.Request.Context(), *p.Avatar); err == nil {
+			p.Avatar = &u
+		} else {
+			p.Avatar = nil
+		}
+	}
+	return p
 }
 
 func (h *Handler) FindOne(c *gin.Context) {
@@ -29,7 +42,7 @@ func (h *Handler) FindOne(c *gin.Context) {
 		response.Error(c, http.StatusNotFound, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Profile retrieved successfully", data)
+	response.Success(c, http.StatusOK, "Profile retrieved successfully", h.withAvatarURL(c, data))
 }
 
 func (h *Handler) Update(c *gin.Context) {
@@ -48,7 +61,7 @@ func (h *Handler) Update(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Profile updated successfully", data)
+	response.Success(c, http.StatusOK, "Profile updated successfully", h.withAvatarURL(c, data))
 }
 
 func (h *Handler) UploadAvatar(c *gin.Context) {
@@ -67,18 +80,23 @@ func (h *Handler) UploadAvatar(c *gin.Context) {
 		return
 	}
 
-	filename := fmt.Sprintf("%d-%d%s", time.Now().UnixMilli(), userID, ext)
-	savePath := filepath.Join(h.publicDir, "uploads", "photos", filename)
-	if err := c.SaveUploadedFile(file, savePath); err != nil {
-		response.Error(c, http.StatusInternalServerError, "Failed to save avatar", nil)
+	f, err := file.Open()
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "Cannot read uploaded file", nil)
+		return
+	}
+	defer f.Close()
+
+	key := fmt.Sprintf("photos/%d-%d%s", time.Now().UnixMilli(), userID, ext)
+	if err := h.store.Put(c.Request.Context(), key, f, file.Size, file.Header.Get("Content-Type")); err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to store avatar", nil)
 		return
 	}
 
-	avatarPath := "/uploads/photos/" + filename
-	data, err := h.svc.UpdateAvatar(c.Request.Context(), userID, avatarPath)
+	data, err := h.svc.UpdateAvatar(c.Request.Context(), userID, key)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Avatar uploaded successfully", data)
+	response.Success(c, http.StatusOK, "Avatar uploaded successfully", h.withAvatarURL(c, data))
 }

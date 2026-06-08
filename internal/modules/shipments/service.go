@@ -240,7 +240,7 @@ func (s *service) HandleWebhook(ctx context.Context, payload WebhookPayload) err
 			// 5. Generate tracking number + QR code
 			trackingNumber := fmt.Sprintf("KA%s", payload.TransactionID)
 
-			qrPath, err := s.qrSvc.Generate(trackingNumber)
+			qrPath, err := s.qrSvc.Generate(ctx, trackingNumber)
 			if err != nil {
 				return fmt.Errorf("qr code generation failed: %w", err)
 			}
@@ -609,7 +609,7 @@ func (s *service) PickupShipment(ctx context.Context, trackingNumber string, use
 			return err
 		}
 		if err := r.UpdateShipmentDetail(ctx, shipment.ID, map[string]any{
-			"pickup_proof": "uploads/photos/" + photoFilename,
+			"pickup_proof": photoFilename,
 		}); err != nil {
 			return err
 		}
@@ -658,7 +658,7 @@ func (s *service) DeliverToCustomer(ctx context.Context, trackingNumber string, 
 			return err
 		}
 		if err := r.UpdateShipmentDetail(ctx, shipment.ID, map[string]any{
-			"receipt_proof": "uploads/photos/" + photoFilename,
+			"receipt_proof": photoFilename,
 		}); err != nil {
 			return err
 		}
@@ -727,7 +727,7 @@ func (s *service) GeneratePDFByID(ctx context.Context, id, userID, roleID uint) 
 
 	qrBase64 := ""
 	if shipment.QrCodeImage != nil {
-		qrBase64 = s.pdfSvc.QRBase64(*shipment.QrCodeImage)
+		qrBase64 = s.pdfSvc.QRBase64(ctx, *shipment.QrCodeImage)
 	}
 
 	senderName, senderEmail, senderPhone, pickupAddress := "", "", "", ""

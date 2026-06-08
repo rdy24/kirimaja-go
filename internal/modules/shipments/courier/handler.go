@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"mime/multipart"
 	"net/http"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"kirimaja-go/internal/common/response"
+	"kirimaja-go/internal/common/storage"
 	"kirimaja-go/internal/modules/shipments"
+	"kirimaja-go/models"
 )
 
 const maxProofPhotoBytes = 5 << 20 // 5 MiB
@@ -23,8 +23,8 @@ var allowedProofPhotoTypes = map[string]string{
 	"image/webp": ".webp",
 }
 
-// saveProofPhoto validates the upload (size + real content type) and writes
-// it with a server-generated name. Returns the stored filename.
+// saveProofPhoto validates the upload (size + sniffed content type) and
+// stores it in object storage under a server-generated key, which it returns.
 func (h *Handler) saveProofPhoto(c *gin.Context, file *multipart.FileHeader, userID uint) (string, error) {
 	if file.Size > maxProofPhotoBytes {
 		return "", fmt.Errorf("photo too large (max %d MB)", maxProofPhotoBytes>>20)
@@ -34,35 +34,39 @@ func (h *Handler) saveProofPhoto(c *gin.Context, file *multipart.FileHeader, use
 	if err != nil {
 		return "", fmt.Errorf("cannot read uploaded file")
 	}
+	defer f.Close()
+
 	head := make([]byte, 512)
 	n, _ := f.Read(head)
-	_ = f.Close()
 	contentType := http.DetectContentType(head[:n])
-
 	ext, ok := allowedProofPhotoTypes[contentType]
 	if !ok {
 		return "", fmt.Errorf("unsupported image type: %s", contentType)
 	}
-
-	dir := filepath.Join(h.publicDir, "uploads", "photos")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("cannot prepare upload directory")
+	if _, err := f.Seek(0, 0); err != nil {
+		return "", fmt.Errorf("cannot rewind uploaded file")
 	}
 
-	filename := fmt.Sprintf("%d-%d%s", time.Now().UnixMilli(), userID, ext)
-	if err := c.SaveUploadedFile(file, filepath.Join(dir, filename)); err != nil {
-		return "", fmt.Errorf("failed to save photo")
+	key := fmt.Sprintf("proofs/%d-%d%s", time.Now().UnixMilli(), userID, ext)
+	if err := h.store.Put(c.Request.Context(), key, f, file.Size, contentType); err != nil {
+		return "", fmt.Errorf("failed to store photo")
 	}
-	return filename, nil
+	return key, nil
 }
 
 type Handler struct {
-	svc       shipments.CourierService
-	publicDir string
+	svc   shipments.CourierService
+	store storage.Store
 }
 
-func NewHandler(svc shipments.CourierService, publicDir string) *Handler {
-	return &Handler{svc, publicDir}
+func NewHandler(svc shipments.CourierService, store storage.Store) *Handler {
+	return &Handler{svc, store}
+}
+
+func (h *Handler) okShipment(c *gin.Context, msg string, s *models.Shipment) {
+	resp := shipments.ToShipmentResponse(s)
+	shipments.PresignShipment(c.Request.Context(), h.store, resp)
+	response.Success(c, http.StatusOK, msg, resp)
 }
 
 func (h *Handler) FindAll(c *gin.Context) {
@@ -71,7 +75,9 @@ func (h *Handler) FindAll(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipments retrieved successfully", shipments.ToShipmentResponses(list))
+	resp := shipments.ToShipmentResponses(list)
+	shipments.PresignShipments(c.Request.Context(), h.store, resp)
+	response.Success(c, http.StatusOK, "Shipments retrieved successfully", resp)
 }
 
 func (h *Handler) PickShipment(c *gin.Context) {
@@ -83,7 +89,7 @@ func (h *Handler) PickShipment(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipment picked up successfully", shipments.ToShipmentResponse(s))
+	h.okShipment(c, "Shipment picked up successfully", s)
 }
 
 func (h *Handler) PickupShipment(c *gin.Context) {
@@ -107,7 +113,7 @@ func (h *Handler) PickupShipment(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipment pickup confirmed successfully", shipments.ToShipmentResponse(s))
+	h.okShipment(c, "Shipment pickup confirmed successfully", s)
 }
 
 func (h *Handler) DeliverToBranch(c *gin.Context) {
@@ -119,7 +125,7 @@ func (h *Handler) DeliverToBranch(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipment delivered to branch successfully", shipments.ToShipmentResponse(s))
+	h.okShipment(c, "Shipment delivered to branch successfully", s)
 }
 
 func (h *Handler) PickShipmentFromBranch(c *gin.Context) {
@@ -131,7 +137,7 @@ func (h *Handler) PickShipmentFromBranch(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipment picked from branch successfully", shipments.ToShipmentResponse(s))
+	h.okShipment(c, "Shipment picked from branch successfully", s)
 }
 
 func (h *Handler) PickupShipmentFromBranch(c *gin.Context) {
@@ -143,7 +149,7 @@ func (h *Handler) PickupShipmentFromBranch(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipment picked up from branch successfully", shipments.ToShipmentResponse(s))
+	h.okShipment(c, "Shipment picked up from branch successfully", s)
 }
 
 func (h *Handler) DeliverToCustomer(c *gin.Context) {
@@ -167,5 +173,5 @@ func (h *Handler) DeliverToCustomer(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
-	response.Success(c, http.StatusOK, "Shipment delivered to customer successfully", shipments.ToShipmentResponse(s))
+	h.okShipment(c, "Shipment delivered to customer successfully", s)
 }

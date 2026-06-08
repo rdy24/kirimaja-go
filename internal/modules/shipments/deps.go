@@ -28,15 +28,15 @@ type PaymentGateway interface {
 	VerifyWebhookSignature(orderID, statusCode, grossAmount string) func(signatureKey string) bool
 }
 
-// QRGenerator renders a QR code and returns its web path.
+// QRGenerator renders a QR code and returns its object-storage key.
 type QRGenerator interface {
-	Generate(content string) (string, error)
+	Generate(ctx context.Context, content string) (string, error)
 }
 
 // PDFRenderer renders the shipment label PDF.
 type PDFRenderer interface {
 	Generate(ctx context.Context, data pdf.ShipmentData) ([]byte, error)
-	QRBase64(qrWebPath string) string
+	QRBase64(ctx context.Context, key string) string
 }
 
 // TaskQueue enqueues asynchronous jobs (emails, delayed expiry).
